@@ -10,7 +10,7 @@
  * to refresh (old caches are deleted automatically on activate).
  * ------------------------------------------------------------------
  */
-const CACHE_NAME = "porondama-shell-v4";
+const CACHE_NAME = "porondama-shell-v5";
 
 const ASSETS_TO_CACHE = [
   "index.html",
@@ -27,7 +27,10 @@ const ASSETS_TO_CACHE = [
   "js/api.js",
   "js/matching.js",
   "js/cloudinary.js",
+  "js/panchanga.js",
+  "js/astronomy-engine.min.js",
   "data/reference.js",
+  "data/places.js",
   "img/icon-192.png",
   "img/icon-512.png"
 ];
