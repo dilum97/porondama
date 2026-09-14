@@ -474,6 +474,28 @@ img {
   color: var(--ivory); font-size: 0.92rem;
 }
 .panchanga-result .hint { margin: 0; }
+.panchanga-cards {
+  display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;
+}
+.panchanga-card {
+  flex: 1 1 0; min-width: 92px; padding: 14px 10px; border-radius: var(--radius);
+  text-align: center; border: 1px solid var(--border); background: rgba(255,255,255,0.03);
+}
+.panchanga-card .pc-label {
+  display: block; font-size: 0.7rem; color: var(--ivory-dim); margin-bottom: 5px;
+  letter-spacing: 0.02em;
+}
+.panchanga-card .pc-value {
+  display: block; font-size: 1.05rem; font-weight: 700;
+  font-family: 'Noto Serif Sinhala', serif;
+}
+.panchanga-card .pc-value .hint { font-size: 0.72rem; font-weight: 500; font-family: inherit; }
+.panchanga-card.pc-lagna { border-color: var(--gold); background: rgba(223, 153, 31, 0.12); }
+.panchanga-card.pc-lagna .pc-value { color: var(--gold-soft); }
+.panchanga-card.pc-nakshatra { border-color: var(--good); background: rgba(95, 209, 196, 0.12); }
+.panchanga-card.pc-nakshatra .pc-value { color: var(--good); }
+.panchanga-card.pc-rashi { border-color: var(--rose); background: rgba(181, 73, 91, 0.14); }
+.panchanga-card.pc-rashi .pc-value { color: #ef94a3; }
 .request-detail-photos { display: flex; gap: 10px; flex-wrap: wrap; }
 .request-detail-photos img {
   width: 140px; height: 140px; object-fit: cover; border-radius: 12px; border: 1px solid var(--border);
