@@ -3,9 +3,8 @@
 // pick them manually from a dropdown.
 //
 // How it works:
-//   1. Convert the given local birth date+time (Sri Lanka's clock offset
-//      has changed over the years — see sriLankaUtcOffsetMinutes below)
-//      to a UTC instant.
+//   1. Convert the given local birth date+time (Sri Lanka is always
+//      UTC+5:30, no DST) to a UTC instant.
 //   2. Use astronomy-engine (js/astronomy-engine.min.js, vendored
 //      locally — no network call, no API key) to get the Moon's
 //      apparent geocentric ecliptic longitude at that instant. This
@@ -22,23 +21,7 @@
 // place's lat/lng — the member picks that from the SL_PLACES
 // dropdown in data/places.js.
 
-// Sri Lanka has NOT always been UTC+5:30. For a marriage-site userbase
-// (mostly born 1980s–2000s) this matters a lot:
-//   - before 1996-05-25            : UTC+5:30
-//   - 1996-05-25 to 1996-10-26     : UTC+6:30  (energy-saving clock change)
-//   - 1996-10-26 to 2006-04-15     : UTC+6:00  (adjusted back by 30 min)
-//   - 2006-04-15 onward            : UTC+5:30  (reverted to match IST)
-// Boundaries are compared on the local calendar date, which is accurate
-// enough here since all three changeovers happened at local midnight
-// (the 2006 one at 00:30) and birth records are to the minute, not the
-// exact transition instant.
-function sriLankaUtcOffsetMinutes(y, m, d) {
-  const asNum = y * 10000 + m * 100 + d; // YYYYMMDD for easy comparison
-  if (asNum < 19960525) return 5 * 60 + 30;
-  if (asNum < 19961026) return 6 * 60 + 30;
-  if (asNum < 20060415) return 6 * 60;
-  return 5 * 60 + 30;
-}
+const SL_UTC_OFFSET_MINUTES = 5 * 60 + 30;
 
 // Lahiri ayanamsa, linear approximation anchored at J2000.0
 // (23.85° on 2000-01-01, precessing ~50.2388475 arcsec/year).
@@ -67,7 +50,7 @@ function calculateNakshatraRashi(birthDateStr, birthTimeStr) {
   if ([y, m, d, hh, mm].some(n => Number.isNaN(n))) return null;
 
   const localAsUtc = Date.UTC(y, m - 1, d, hh, mm, 0);
-  const utcInstant = new Date(localAsUtc - sriLankaUtcOffsetMinutes(y, m, d) * 60000);
+  const utcInstant = new Date(localAsUtc - SL_UTC_OFFSET_MINUTES * 60000);
 
   const astroTime = Astronomy.MakeTime(utcInstant);
   const moonTropicalLon = Astronomy.EclipticGeoMoon(utcInstant).lon;
@@ -125,7 +108,7 @@ function calculateLagna(birthDateStr, birthTimeStr, lat, lng) {
   if ([y, m, d, hh, mm].some(n => Number.isNaN(n))) return null;
 
   const localAsUtc = Date.UTC(y, m - 1, d, hh, mm, 0);
-  const utcInstant = new Date(localAsUtc - sriLankaUtcOffsetMinutes(y, m, d) * 60000);
+  const utcInstant = new Date(localAsUtc - SL_UTC_OFFSET_MINUTES * 60000);
   const astroTime = Astronomy.MakeTime(utcInstant);
 
   const gastHours = Astronomy.SiderealTime(astroTime); // Greenwich apparent sidereal time, 0-24h
