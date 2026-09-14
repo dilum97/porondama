@@ -122,6 +122,7 @@
       document.getElementById("lagnaRashi").value = "";
       document.getElementById("nakshatra").value = "";
       document.getElementById("rashi").value = "";
+      box.className = "panchanga-result";
       box.innerHTML = `<span class="hint">උපන් දිනය සහ වේලාව දෙකම දෙන්න</span>`;
       return;
     }
@@ -137,11 +138,25 @@
       : null;
     document.getElementById("lagnaRashi").value = lagnaResult ? lagnaResult.lagnaRashiId : "";
     const lagnaRashi = lagnaResult ? getRashi(lagnaResult.lagnaRashiId) : null;
-    const lagnaText = lagnaRashi
-      ? `ලග්නය: <strong>${lagnaRashi.si}</strong> · `
-      : `ලග්නය: <span class="hint">ස්ථානය තෝරන්න</span> · `;
+    const lagnaValue = lagnaRashi
+      ? lagnaRashi.si
+      : `<span class="hint">ස්ථානය තෝරන්න</span>`;
 
-    box.innerHTML = `✓ ${lagnaText}නැකත: <strong>${nak ? nak.si : ''}</strong> · රාශිය: <strong>${rashi ? rashi.si : ''}</strong>`;
+    box.className = "panchanga-cards";
+    box.innerHTML = `
+      <div class="panchanga-card pc-lagna">
+        <span class="pc-label">ලග්නය</span>
+        <span class="pc-value">${lagnaValue}</span>
+      </div>
+      <div class="panchanga-card pc-nakshatra">
+        <span class="pc-label">නැකත</span>
+        <span class="pc-value">${nak ? nak.si : '—'}</span>
+      </div>
+      <div class="panchanga-card pc-rashi">
+        <span class="pc-label">රාශිය</span>
+        <span class="pc-value">${rashi ? rashi.si : '—'}</span>
+      </div>
+    `;
   }
   document.getElementById("birthDate").addEventListener("change", refreshComputedPanchanga);
   document.getElementById("birthTime").addEventListener("change", refreshComputedPanchanga);
