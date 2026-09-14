@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>පොරොන්දම් විස්තර · Porondama</title>
+<link rel="icon" href="img/icon-192.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#04211a">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="topbar">
+  <a href="dashboard.html" class="brand">
+    <img src="img/logo2.png" alt="Porondama" class="brand-logo">
+  </a>
+  <div class="nav-links">
+    <a href="dashboard.html">← ආපසු</a>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="profile-card" id="content">Loading...</div>
+</div>
+
+<div id="lightbox" class="lightbox" style="display:none;" onclick="if(event.target===this) closeLightbox()">
+  <button type="button" class="lightbox-close" onclick="closeLightbox()">✕</button>
+  <button type="button" class="lightbox-nav lightbox-prev" onclick="lightboxNav(-1)">‹</button>
+  <img id="lightboxImg" src="" alt="">
+  <button type="button" class="lightbox-nav lightbox-next" onclick="lightboxNav(1)">›</button>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="data/reference.js"></script>
+<script src="js/matching.js"></script>
+<script src="js/cloudinary.js"></script>
+<script src="js/api.js"></script>
+<script>
+  let currentGalleryPhotos = [];
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s == null ? "" : s;
+    return div.innerHTML;
+  }
+
+  let lightboxIndex = 0;
+  window.openLightbox = function (photos, index) {
+    currentGalleryPhotos = photos;
+    lightboxIndex = index;
+    document.getElementById("lightboxImg").src = currentGalleryPhotos[lightboxIndex];
+    document.getElementById("lightbox").style.display = "flex";
+  };
+  window.closeLightbox = function () {
+    document.getElementById("lightbox").style.display = "none";
+  };
+  window.lightboxNav = function (delta) {
+    lightboxIndex = (lightboxIndex + delta + currentGalleryPhotos.length) % currentGalleryPhotos.length;
+    document.getElementById("lightboxImg").src = currentGalleryPhotos[lightboxIndex];
+  };
+  document.addEventListener("keydown", (e) => {
+    if (document.getElementById("lightbox").style.display !== "flex") return;
+    if (e.key === "Escape") closeLightbox();
+    if (e.key === "ArrowLeft") lightboxNav(-1);
+    if (e.key === "ArrowRight") lightboxNav(1);
+  });
+
+  (async () => {
+    const id = new URLSearchParams(location.search).get("id");
+    try {
+      const data = await apiCall("/api/matches/" + id);
+      currentGalleryPhotos = data.user.photos || [];
+      const content = document.getElementById("content");
+      content.innerHTML = `
+        <h2 style="margin-top:0;">${escapeHtml(data.user.name)} සමඟ ගැලපීම</h2>
+        <div style="display:flex; align-items:center; gap:20px; margin: 18px 0;">
+          ${data.user.photoURL ? `<img src="${escapeHtml(data.user.photoURL)}" alt="" style="width:64px;height:64px;border-radius:50%;object-fit:cover;">` : ""}
+          <div class="ring" style="--pct:${data.percentage}; width:90px; height:90px;"><span style="font-size:1.2rem;">${data.percentage}%</span></div>
+          <div>
+            <div style="color:var(--ivory-dim); font-size:0.9rem;">මුළු ලකුණු</div>
+            <div style="font-size:1.3rem; color:var(--gold-soft);">${data.totalScore} / ${data.totalMax}</div>
+          </div>
+        </div>
+        ${data.user.photos && data.user.photos.length > 1 ? `
+          <div class="photo-gallery" style="margin-bottom:18px;">
+            ${data.user.photos.map((p, i) => `<div class="photo-slot"><img src="${escapeHtml(p)}" alt="" onclick="openLightbox(currentGalleryPhotos, ${i})"></div>`).join("")}
+          </div>` : ""}
+        ${(data.user.education || data.user.profession || data.user.birthPlace || data.user.religion || data.user.ethnicity || data.user.height || calculateAge(data.user.birthDate) != null) ? `
+          <div class="profile-grid" style="margin-bottom:18px;">
+            ${calculateAge(data.user.birthDate) != null ? `<div class="k">වයස</div><div class="v">${calculateAge(data.user.birthDate)}</div>` : ""}
+            ${data.user.height ? `<div class="k">උස</div><div class="v">${escapeHtml(data.user.height)} cm</div>` : ""}
+            ${data.user.birthPlace ? `<div class="k">උපන් ස්ථානය</div><div class="v">${escapeHtml(data.user.birthPlace)}</div>` : ""}
+            ${data.user.religion ? `<div class="k">ආගම</div><div class="v">${escapeHtml(data.user.religion)}</div>` : ""}
+            ${data.user.ethnicity ? `<div class="k">ජාතිය</div><div class="v">${escapeHtml(data.user.ethnicity)}</div>` : ""}
+            ${data.user.education ? `<div class="k">අධ්‍යාපනය</div><div class="v">${escapeHtml(data.user.education)}</div>` : ""}
+            ${data.user.profession ? `<div class="k">වෘත්තිය</div><div class="v">${escapeHtml(data.user.profession)}</div>` : ""}
+          </div>` : ""}
+        ${data.user.bio ? `<p style="color:var(--ivory); font-size:0.92rem; margin-bottom:18px;">${escapeHtml(data.user.bio)}</p>` : ""}
+        ${(data.user.facebook || data.user.whatsapp) ? `
+          <div style="display:flex; gap:10px; margin-bottom:18px; flex-wrap:wrap;">
+            ${data.user.facebook ? `<a class="btn btn-secondary" style="width:auto;" href="${escapeHtml(data.user.facebook)}" target="_blank" rel="noopener noreferrer">Facebook ගිණුම</a>` : ""}
+            ${data.user.whatsapp ? `<a class="btn btn-secondary" style="width:auto;" href="https://wa.me/${escapeHtml(data.user.whatsapp.replace(/[^0-9]/g, ''))}" target="_blank" rel="noopener noreferrer">WhatsApp මගින් සම්බන්ධ වන්න</a>` : ""}
+          </div>` : ""}
+        ${data.doshas.length ? `<div>${data.doshas.map(d => `<span class="dosha-tag">${escapeHtml(d)}</span>`).join("")}</div>` : ""}
+        <table class="factor-table">
+          <thead><tr><th>පොරොන්දම</th><th>ලකුණු</th><th style="width:40%;"></th></tr></thead>
+          <tbody>
+            ${data.factors.map(f => `
+              <tr>
+                <td>${escapeHtml(f.nameSi)}</td>
+                <td>${f.score} / ${f.max}</td>
+                <td><div class="bar-bg"><div class="bar-fill" style="width:${(f.score / f.max) * 100}%;"></div></div></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+        <p style="color:var(--ivory-dim); font-size:0.82rem; margin-top:22px;">
+          මෙය සම්ප්‍රදායික අෂ්ටකූට පොරොන්දම් ක්‍රමය මත පදනම් වූ ස්වයංක්‍රීය ගණනයකි. විවාහයට පෙර සම්පූර්ණ කේන්දර පරීක්ෂණයක් සඳහා පළපුරුදු ජ්‍යෝතිෂවරයෙකු හමුවීම නිර්දේශ කරමු.
+        </p>
+        <button class="btn btn-primary" style="margin-top:18px;" onclick="location.href='dashboard.html?with=${data.user.id}'">${escapeHtml(data.user.name)} ට පණිවිඩයක් යවන්න</button>
+      `;
+    } catch (err) {
+      document.getElementById("content").innerHTML = `<div class="error-box">${escapeHtml(err.message)}</div>`;
+    }
+  })();
+</script>
+<script src="js/sw-register.js"></script>
+</body>
+</html>

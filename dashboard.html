@@ -1,0 +1,1266 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Porondama</title>
+<link rel="icon" href="img/icon-192.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#04211a">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="topbar">
+  <a href="dashboard.html" class="brand">
+    <img src="img/logo2.png" alt="Porondama" class="brand-logo">
+  </a>
+  <div class="nav-links">
+    <a href="admin.html" id="adminLink" style="display:none;">පරිපාලක</a>
+  </div>
+</div>
+
+<div id="completeProfileBanner" class="complete-profile-banner" style="display:none;">
+  <span>ඔබට ගැලපෙනම සහකාරිය සොයා ගැනීමට settings වෙත ගොස් ඔබගේ කේන්දරයේ විස්තර ඇතුලත් කරන්න.</span>
+  <div class="complete-profile-actions">
+    <button type="button" class="banner-close-btn" id="completeProfileCloseBtn">✕</button>
+  </div>
+</div>
+
+<!-- ============ PENDING APPROVAL SCREEN ============ -->
+<div id="pendingScreen" class="wrap" style="display:none; text-align:center; max-width:560px;">
+  <div class="profile-card">
+    <h2 style="margin-top:0;">ඔබගේ ලියාපදිංචිය සමාලෝචනය වෙමින් පවතී</h2>
+    <p style="color:var(--ivory-dim);">ඔබගේ විස්තර සහ ඡායාරූපය පරිපාලකවරයා විසින් සමාලෝචනය කරමින් සිටී. අනුමත වූ පසු මෙම පිටුව ස්වයංක්‍රීයව සයිට් එකට යාවත්කාලීන වේ.</p>
+    <button type="button" class="btn btn-secondary" id="pendingSupportBtn" style="width:auto; margin-top:10px;">පරිපාලක සමඟ කතා කරන්න</button>
+    <button type="button" class="btn btn-secondary" id="pendingLogoutBtn" style="width:auto; margin-top:10px; margin-left:8px;">Logout</button>
+  </div>
+</div>
+
+<div id="pendingChatBackBar" style="display:none; padding:10px 20px; border-bottom:1px solid var(--border);">
+  <button type="button" class="btn btn-secondary" id="pendingChatBackToStatusBtn" style="width:auto;">← ලියාපදිංචි තත්ත්වයට</button>
+</div>
+
+<!-- ============ INCOMPLETE-PROFILE TOP BAR ============ -->
+<!-- Shown only while status is "incomplete" (fresh signup, not yet
+     submitted). No floating popup message icon on this screen — just
+     this one small icon in the corner, per the "only I should be
+     able to message them until verified" requirement. -->
+<div id="incompleteTopBar" style="display:none; align-items:center; justify-content:space-between; padding:12px 20px; border-bottom:1px solid var(--border); background:var(--night-2);">
+  <div style="font-size:0.9rem; color:var(--ivory-dim);">ඔබගේ පැතිකඩ සම්පූර්ණ කරන්න</div>
+  <div style="display:flex; align-items:center; gap:6px;">
+    <button type="button" class="btn btn-secondary" id="incompleteMsgBtn" title="පරිපාලක සමඟ කතා කරන්න" style="width:auto; padding:8px 10px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5.5h16a1 1 0 0 1 1 1V17a1 1 0 0 1-1 1H8l-4 3.5V6.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+    </button>
+    <button type="button" class="btn btn-secondary" id="incompleteLogoutBtn" style="width:auto;">Logout</button>
+  </div>
+</div>
+
+<div class="tabbar" id="mainTabbar">
+  <button class="tab-btn" data-tab="home">
+    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 11.5L12 4l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.5 10v9a1 1 0 0 0 1 1H9a1 1 0 0 0 1-1v-4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v4a1 1 0 0 0 1 1h2.5a1 1 0 0 0 1-1v-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  <button class="tab-btn" data-tab="matches">
+    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 20.5s-7.5-4.6-9.8-9.1C.6 8.1 2 4.8 5.2 4.1c2-.4 3.9.5 5 2.1a1 1 0 0 0 1.6 0c1.1-1.6 3-2.5 5-2.1 3.2.7 4.6 4 3 7.3-2.3 4.5-9.8 9.1-9.8 9.1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+  </button>
+  <button class="tab-btn" data-tab="messages">
+    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5.5h16a1 1 0 0 1 1 1V17a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m4 6.5 8 6.5 8-6.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span class="badge" id="unreadBadge" style="display:none;"></span>
+  </button>
+  <div class="notif-wrap">
+    <button type="button" class="tab-btn" id="notifBell" aria-label="දැනුම්දීම්">
+      <svg class="tab-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span class="badge" id="notifBadge" style="display:none;"></span>
+    </button>
+    <div class="notif-dropdown" id="notifDropdown" style="display:none;">
+      <div class="notif-dropdown-title">දැනුම්දීම්</div>
+      <div id="notifList"><div class="empty-state" style="padding:24px 10px;">නව දැනුම්දීම් නැත</div></div>
+    </div>
+  </div>
+  <button class="tab-btn" data-tab="settings">
+    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+  </button>
+</div>
+
+<div class="wrap" id="mainWrap">
+
+  <!-- ============ HOME (feed) ============ -->
+  <div class="tab-panel" id="panel-home">
+    <div class="section-title">
+      <h2>ඔබට හොඳින්ම ගැලපෙන අය</h2>
+      <span class="hint">50%+ ගැලපීම්, ඡායාරූප සහිතව</span>
+    </div>
+    <div id="feedList" class="feed-scroll"><div class="empty-state">පූරණය වෙමින්...</div></div>
+  </div>
+
+  <!-- ============ MATCHES ============ -->
+  <div class="tab-panel" id="panel-matches">
+    <div class="section-title">
+      <h2>ඔබට ගැලපෙන අය</h2>
+      <span class="hint" id="countHint"></span>
+    </div>
+    <div id="matchList" class="match-list"><div class="empty-state">පූරණය වෙමින්...</div></div>
+  </div>
+
+  <!-- ============ MESSAGES ============ -->
+  <div class="tab-panel" id="panel-messages">
+    <div id="conversationsView">
+      <div class="section-title">
+        <h2>පණිවිඩ</h2>
+        <span class="hint"></span>
+      </div>
+      <div id="convList" class="conv-list"><div class="empty-state">පූරණය වෙමින්...</div></div>
+    </div>
+
+    <div id="chatView" style="display:none;">
+      <div class="chat-shell">
+        <div class="chat-header">
+          <button class="back-btn" id="chatBackBtn">←</button>
+          <button type="button" class="chat-header-link" id="chatHeaderLink">
+            <img id="chatAvatar" class="conv-avatar" src="" alt="">
+            <div class="conv-name" id="chatName"></div>
+          </button>
+        </div>
+        <div class="chat-select-bar" id="chatSelectBar">
+          <div class="sel-count" id="selCount"></div>
+          <button type="button" class="sel-delete" id="selDeleteBtn">මකන්න</button>
+          <button type="button" class="sel-cancel" id="selCancelBtn">අවලංගු</button>
+        </div>
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="reply-preview-bar" id="replyPreviewBar">
+          <div class="rp-text" id="replyPreviewText"></div>
+          <button type="button" class="rp-close" id="replyPreviewClose">✕</button>
+        </div>
+        <form class="chat-input-row" id="chatForm">
+          <input id="chatInput" placeholder="පණිවිඩයක් ලියන්න..." autocomplete="off">
+          <button type="submit" class="btn btn-primary" style="margin-top:0; width:auto;">යවන්න</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SETTINGS ============ -->
+  <div class="tab-panel" id="panel-settings">
+    <div class="profile-card" style="max-width:620px; margin:0 auto;">
+      <div class="settings-section">
+        <h3>මගේ කේන්දර විස්තර</h3>
+        <p class="hint" id="settingsHint">ඔබේ පැතිකඩ තොරතුරු සහ ඡායාරූපය මෙතනින් යාවත්කාලීන කරන්න</p>
+        <div id="incompleteNotice" style="display:none; background:rgba(223,153,31,0.12); border:1px solid var(--border); border-radius:8px; padding:10px 14px; margin-bottom:16px; font-size:0.85rem; color:var(--ivory);">
+          නම, ස්ත්‍රී/පුරුෂ භාවය, නැකත, රාශිය සහ ඡායාරූපයක් අනිවාර්යයි. සියල්ල පුරවා පහළින් <strong>"සමාලෝචනය සඳහා යවන්න"</strong> ඔබන්න.
+        </div>
+        <form id="profileForm">
+          <label style="margin-top:0;">ප්‍රධාන ඡායාරූපය (Cover Photo)</label>
+          <div class="cover-photo-row">
+            <div class="cover-photo-preview" id="coverPhotoPreview"></div>
+            <button type="button" class="btn btn-secondary" id="changeCoverBtn" style="width:auto;">ඡායාරූපය මාරු කරන්න</button>
+            <input id="coverInput" type="file" accept="image/*" style="display:none;">
+          </div>
+
+          <label style="margin-top:18px;">ඡායාරූප ගැලරිය (උපරිම <span id="galleryMaxLabel">7</span>)</label>
+          <div class="photo-gallery" id="photoGallery"></div>
+          <button type="button" class="btn btn-secondary" id="updateGalleryBtn" style="width:auto; margin-top:10px;">ගැලරිය යාවත්කාලීන කරන්න</button>
+          <input id="photoInput" type="file" accept="image/*" multiple style="display:none;">
+
+          <label for="name">සම්පූර්ණ නම</label>
+          <input id="name" required>
+
+          <label for="gender">ස්ත්‍රී/පුරුෂ භාවය</label>
+          <select id="gender" required>
+            <option value="">-- Select --</option>
+            <option value="female">ස්ත්‍රී</option>
+            <option value="male">පුරුෂ</option>
+          </select>
+
+          <div class="grid-2">
+            <div>
+              <label for="birthDate">උපන් දිනය</label>
+              <input id="birthDate" type="date" required>
+            </div>
+            <div>
+              <label for="birthTime">උපන් වේලාව</label>
+              <input id="birthTime" type="time" required>
+            </div>
+          </div>
+
+          <label for="birthPlace">උපන් ස්ථානය</label>
+          <select id="birthPlace"></select>
+
+          <div class="grid-2">
+            <div>
+              <label>ලග්නය, නැකත සහ රාශිය</label>
+              <div id="panchangaResult" class="panchanga-result">
+                <span class="hint">උපන් දිනය, වේලාව සහ ස්ථානය දෙන්න</span>
+              </div>
+              <input type="hidden" id="lagnaRashi">
+              <input type="hidden" id="nakshatra">
+              <input type="hidden" id="rashi">
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div>
+              <label for="education">අධ්‍යාපනය</label>
+              <input id="education" placeholder="උදා: BSc, University of Colombo">
+            </div>
+            <div>
+              <label for="profession">වෘත්තිය</label>
+              <input id="profession" placeholder="උදා: Software Engineer">
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div>
+              <label for="religion">ආගම</label>
+              <select id="religion">
+                <option value="">-- Select --</option>
+                <option value="බුද්ධාගම">බුද්ධාගම</option>
+                <option value="හින්දු">හින්දු</option>
+                <option value="ක්‍රිස්තියානි">ක්‍රිස්තියානි</option>
+                <option value="කතෝලික">කතෝලික</option>
+                <option value="ඉස්ලාම්">ඉස්ලාම්</option>
+                <option value="අනෙකුත්">අනෙකුත්</option>
+              </select>
+            </div>
+            <div>
+              <label for="ethnicity">ජාතිය</label>
+              <select id="ethnicity">
+                <option value="">-- Select --</option>
+                <option value="සිංහල">සිංහල</option>
+                <option value="දෙමළ">දෙමළ</option>
+                <option value="මුස්ලිම්">මුස්ලිම්</option>
+                <option value="බර්ගර්">බර්ගර්</option>
+                <option value="අනෙකුත්">අනෙකුත්</option>
+              </select>
+            </div>
+          </div>
+
+          <label for="height">උස (cm)</label>
+          <input id="height" type="number" min="100" max="250" placeholder="උදා: 170">
+
+          <div class="grid-2">
+            <div>
+              <label for="facebook">Facebook ගිණුම</label>
+              <input id="facebook" type="url" placeholder="https://facebook.com/yourname">
+            </div>
+            <div>
+              <label for="whatsapp">WhatsApp අංකය</label>
+              <input id="whatsapp" type="tel" placeholder="94771234567">
+            </div>
+          </div>
+
+          <label for="bio">ඔබ ගැන කෙටි විස්තරයක්</label>
+          <textarea id="bio" rows="3"></textarea>
+
+          <button type="submit" class="btn-primary">සුරකින්න</button>
+          <button type="button" class="btn-primary" id="submitForReviewBtn" style="display:none; background:var(--good);">සමාලෝචනය සඳහා යවන්න</button>
+          <div class="error-box" id="errorBox" style="display:none;"></div>
+          <p id="savedMsg" style="display:none; color:var(--good); text-align:center; margin-top:12px;">සුරකින ලදී ✓</p>
+        </form>
+      </div>
+
+      <div class="settings-section" style="margin-bottom:0;" id="settingsAccountSection">
+        <h3>ගිණුම</h3>
+        <p class="hint">ඔබේ ගිණුමෙන් ඉවත් වන්න</p>
+        <button class="btn btn-secondary" id="settingsLogoutBtn" style="width:100%;">Logout</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<button type="button" id="supportFab" class="support-fab" aria-label="පාරිභෝගික සේවා" title="පාරිභෝගික සේවා">
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5.5h16a1 1 0 0 1 1 1V17a1 1 0 0 1-1 1H8l-4 3.5V6.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+</button>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="data/reference.js"></script>
+<script src="data/places.js"></script>
+<script src="js/matching.js"></script>
+<script src="js/astronomy-engine.min.js"></script>
+<script src="js/panchanga.js"></script>
+<script src="js/cloudinary.js"></script>
+<script src="js/api.js"></script>
+<script>
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s == null ? "" : s;
+    return div.innerHTML;
+  }
+
+  function timeAgo(ts) {
+    if (!ts || !ts.toDate) return "";
+    const diffMs = Date.now() - ts.toDate().getTime();
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return "දැන්";
+    if (mins < 60) return mins + "මි";
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return hrs + "ප";
+    return Math.floor(hrs / 24) + "දි";
+  }
+
+  let me = null;
+  let convUnsub = null;
+  let msgUnsub = null;
+  let activeChatUser = null; // { id, name, photoURL }
+
+  // ---------------- tabs ----------------
+  const tabButtons = document.querySelectorAll(".tab-btn[data-tab]");
+  const panels = {
+    home: document.getElementById("panel-home"),
+    matches: document.getElementById("panel-matches"),
+    messages: document.getElementById("panel-messages"),
+    settings: document.getElementById("panel-settings")
+  };
+
+  function showTab(name) {
+    tabButtons.forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+    Object.entries(panels).forEach(([k, el]) => el.classList.toggle("active", k === name));
+    if (name === "home") loadFeed();
+    if (name === "matches") loadMatches();
+    if (name === "messages" && !activeChatUser) loadConversations();
+  }
+
+  tabButtons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      // Tapping the Messages tab icon itself should always land on
+      // the conversation list — opening a specific chat only happens
+      // via openChatWith() (clicking a name, or a "with" deep link).
+      if (btn.dataset.tab === "messages" && activeChatUser) {
+        if (msgUnsub) { msgUnsub(); msgUnsub = null; }
+        activeChatUser = null;
+        document.getElementById("chatView").style.display = "none";
+        document.getElementById("conversationsView").style.display = "block";
+      }
+      showTab(btn.dataset.tab);
+    });
+  });
+
+  document.getElementById("completeProfileCloseBtn").addEventListener("click", () => {
+    document.getElementById("completeProfileBanner").style.display = "none";
+  });
+
+  // ---------------- notifications ----------------
+  let notifUnsub = null;
+  let latestNotifications = [];
+
+  function renderNotifDropdown() {
+    const list = document.getElementById("notifList");
+    if (latestNotifications.length === 0) {
+      list.innerHTML = `<div class="empty-state" style="padding:24px 10px;">නව දැනුම්දීම් නැත</div>`;
+      return;
+    }
+    list.innerHTML = latestNotifications.map(n => `
+      <button class="notif-item ${n.read ? '' : 'unread'}" onclick="openNotification('${n.id}','${n.type}','${n.subjectUid}','${escapeHtml(n.subjectName)}','${escapeHtml(n.subjectPhoto)}')">
+        <img class="conv-avatar" src="${escapeHtml(n.subjectPhoto)}" alt="">
+        <div class="conv-info">
+          <div class="conv-name">${n.type === 'match' ? '🎉 ' : ''}${escapeHtml(n.subjectName)}</div>
+          <div class="conv-last">${escapeHtml(n.text)}</div>
+        </div>
+        <div class="conv-time">${timeAgo(n.createdAt)}</div>
+      </button>
+    `).join("");
+  }
+
+  function startNotificationsSubscription() {
+    notifUnsub = subscribeToNotifications(notifications => {
+      latestNotifications = notifications;
+      const unread = notifications.filter(n => !n.read).length;
+      const badge = document.getElementById("notifBadge");
+      if (unread > 0) { badge.textContent = unread; badge.style.display = "inline-block"; }
+      else { badge.style.display = "none"; }
+      if (document.getElementById("notifDropdown").style.display === "block") renderNotifDropdown();
+    }, err => console.error("subscribeToNotifications failed:", err));
+  }
+
+  window.openNotification = function (notifId, type, subjectUid, subjectName, subjectPhoto) {
+    markNotificationRead(notifId);
+    document.getElementById("notifDropdown").style.display = "none";
+    if (type === "message") {
+      openChatWith(subjectUid, subjectName, subjectPhoto);
+    } else if (type === "approved") {
+      // Nothing to open — the pending screen already switches itself
+      // over automatically as soon as status changes.
+    } else {
+      location.href = "match.html?id=" + subjectUid;
+    }
+  };
+
+  document.getElementById("notifBell").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const dropdown = document.getElementById("notifDropdown");
+    const opening = dropdown.style.display !== "block";
+    dropdown.style.display = opening ? "block" : "none";
+    if (opening) renderNotifDropdown();
+  });
+  document.addEventListener("click", () => {
+    document.getElementById("notifDropdown").style.display = "none";
+    closeAllItemMenus();
+  });
+
+  // ---------------- home / feed ----------------
+  async function loadFeed() {
+    const el = document.getElementById("feedList");
+    try {
+      const { feed } = await apiCall("/api/feed");
+      if (feed.length === 0) {
+        el.innerHTML = `<div class="empty-state">තවම ශක්තිමත් ගැලපීම් (50%+) හමු නොවීය.</div>`;
+        return;
+      }
+      el.innerHTML = feed.map(f => `
+        <div class="feed-card" onclick="location.href='match.html?id=${f.user.id}'" style="cursor:pointer;">
+          <img class="feed-photo" src="${escapeHtml(f.user.photoURL)}" alt="${escapeHtml(f.user.name)}">
+          <div class="feed-body">
+            <span class="feed-pct">${f.percentage}% ගැලපීම</span>
+            <p class="feed-name">${escapeHtml(f.user.name)}</p>
+            <div class="feed-meta">${calculateAge(f.user.birthDate) != null ? 'වයස ' + calculateAge(f.user.birthDate) + ' · ' : ''}${f.user.birthPlace ? escapeHtml(f.user.birthPlace) + " · " : ""}ලකුණු ${f.totalScore}/${f.totalMax}</div>
+            <div class="feed-actions">
+              <button class="btn detail-btn" onclick="event.stopPropagation(); location.href='match.html?id=${f.user.id}'">විස්තර</button>
+              <button class="btn btn-primary" style="margin-top:0;" onclick="event.stopPropagation(); openChatWith('${f.user.id}','${escapeHtml(f.user.name)}','${escapeHtml(f.user.photoURL)}')">පණිවිඩය</button>
+            </div>
+          </div>
+        </div>
+      `).join("");
+    } catch (err) {
+      el.innerHTML = `<div class="error-box">${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  // ---------------- matches ----------------
+  async function loadMatches() {
+    const list = document.getElementById("matchList");
+    try {
+      const { matches } = await apiCall("/api/matches");
+      document.getElementById("countHint").textContent = matches.length + " ගැලපීම් හමු විය";
+      if (matches.length === 0) {
+        list.innerHTML = `<div class="empty-state">තවම වෙනත් අය ලියාපදිංචි වී නැත. පසුව නැවත බලන්න.</div>`;
+        return;
+      }
+      list.innerHTML = matches.map(m => `
+        <div class="match-card" onclick="location.href='match.html?id=${m.user.id}'" style="cursor:pointer;">
+          <div class="match-photo-wrap">
+            ${m.user.photoURL ? `<img class="match-photo" src="${escapeHtml(m.user.photoURL)}" alt="${escapeHtml(m.user.name)}">` : `<div class="match-photo match-photo-empty"></div>`}
+            <div class="ring ring-sm" style="--pct:${m.percentage}"><span>${m.percentage}%</span></div>
+          </div>
+          <div>
+            <p class="match-name">${escapeHtml(m.user.name)}</p>
+            <div class="match-meta">${calculateAge(m.user.birthDate) != null ? 'වයස ' + calculateAge(m.user.birthDate) + ' · ' : ''}${m.user.birthPlace ? escapeHtml(m.user.birthPlace) + " · " : ""}පොරොන්දම් ලකුණු ${m.totalScore}/${m.totalMax}</div>
+            ${m.doshas.map(d => `<span class="dosha-tag">${escapeHtml(d)}</span>`).join("")}
+          </div>
+          <div class="match-card-actions">
+            <button class="btn detail-btn" onclick="event.stopPropagation(); location.href='match.html?id=${m.user.id}'">විස්තර</button>
+            <button class="btn btn-primary" style="margin-top:0;" onclick="event.stopPropagation(); openChatWith('${m.user.id}','${escapeHtml(m.user.name)}','${escapeHtml(m.user.photoURL)}')">පණිවිඩය</button>
+          </div>
+        </div>
+      `).join("");
+    } catch (err) {
+      list.innerHTML = `<div class="error-box">${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  // ---------------- messages ----------------
+  // One conversations subscription runs for the whole session (started
+  // at boot) so the Messages tab badge stays current even while the
+  // user is on another tab; loadConversations() just (re)renders the
+  // list from the latest snapshot when the tab is opened.
+  let latestConversations = null;
+  let conversationsError = null;
+
+  function renderConversationList() {
+    const list = document.getElementById("convList");
+    if (conversationsError) {
+      list.innerHTML = `<div class="error-box">${escapeHtml(conversationsError)}</div>`;
+      return;
+    }
+    if (!latestConversations) return;
+    if (latestConversations.length === 0) {
+      list.innerHTML = `<div class="empty-state">තවම පණිවිඩ නැත. ගැලපීමක් වෙත ගොස් පණිවිඩයක් යවන්න.</div>`;
+      return;
+    }
+    list.innerHTML = latestConversations.map(c => `
+      <div class="conv-item" onclick="openChatWith('${c.user.id}','${escapeHtml(c.user.name)}','${escapeHtml(c.user.photoURL)}')">
+        <img class="conv-avatar" src="${escapeHtml(c.user.photoURL)}" alt="">
+        <button type="button" class="conv-menu-btn" onclick="toggleConvMenu(event, '${c.user.id}')">⋮</button>
+        <div class="conv-info">
+          <div class="conv-name">${escapeHtml(c.user.name)}</div>
+          <div class="conv-last ${c.lastSenderId !== me.id ? 'unread' : ''}">${escapeHtml(c.lastMessage)}</div>
+        </div>
+        <div class="conv-time">${timeAgo(c.lastMessageAt)}</div>
+        <div class="item-dropdown" id="convMenu-${c.user.id}" style="display:none;" onclick="event.stopPropagation()">
+          <button onclick="viewProfileFromConv('${c.user.id}')">පැතිකඩ බලන්න</button>
+          <button onclick="viewProfilePhotoFromConv('${escapeHtml(c.user.photoURL)}')">පැතිකඩ ඡායාරූපය බලන්න</button>
+          <button class="danger" onclick="deleteChat('${c.user.id}')">චැට් එක ඉවත් කරන්න</button>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  // ---------------- conversation row 3-dot menu ----------------
+  function closeAllItemMenus() {
+    document.querySelectorAll(".item-dropdown").forEach(el => el.style.display = "none");
+  }
+
+  window.toggleConvMenu = function (event, id) {
+    event.stopPropagation();
+    const menu = document.getElementById("convMenu-" + id);
+    if (!menu) return;
+    const wasOpen = menu.style.display === "block";
+    closeAllItemMenus();
+    menu.style.display = wasOpen ? "none" : "block";
+  };
+
+  window.viewProfileFromConv = function (id) {
+    closeAllItemMenus();
+    location.href = "match.html?id=" + id;
+  };
+
+  window.viewProfilePhotoFromConv = function (photoURL) {
+    closeAllItemMenus();
+    if (!photoURL) { alert("ඡායාරූපයක් නැත"); return; }
+    openLightbox([photoURL], 0);
+  };
+
+  window.deleteChat = async function (id) {
+    closeAllItemMenus();
+    if (!confirm("මෙම චැට් එක ලැයිස්තුවෙන් ඉවත් කරන්නද?")) return;
+    try {
+      await deleteConversationWith(id);
+    } catch (err) {
+      alert(err.message || "ඉවත් කිරීම අසාර්ථකයි");
+    }
+  };
+
+  function startConversationsSubscription() {
+    convUnsub = subscribeToConversations(conversations => {
+      conversationsError = null;
+      latestConversations = conversations;
+      const unread = conversations.filter(c => c.lastSenderId !== me.id).length;
+      const badge = document.getElementById("unreadBadge");
+      if (unread > 0) { badge.textContent = unread; badge.style.display = "inline-block"; }
+      else { badge.style.display = "none"; }
+      if (panels.messages.classList.contains("active") && !activeChatUser) renderConversationList();
+    }, err => {
+      console.error("subscribeToConversations failed:", err);
+      conversationsError = err.message || 'පණිවිඩ පූරණය අසාර්ථකයි';
+      if (panels.messages.classList.contains("active") && !activeChatUser) renderConversationList();
+    });
+  }
+
+  function loadConversations() {
+    const list = document.getElementById("convList");
+    if (conversationsError || latestConversations) renderConversationList();
+    else list.innerHTML = `<div class="empty-state">පූරණය වෙමින්...</div>`;
+  }
+
+  // ---------------- chat: selection / reply / long-press state ----------------
+  let latestMessages = [];
+  let selectionMode = false;
+  let selectedMsgIds = new Set();
+  let replyingTo = null; // { id, text }
+  let longPressTimer = null;
+
+  function resetChatInteractionState() {
+    selectionMode = false;
+    selectedMsgIds = new Set();
+    replyingTo = null;
+    document.getElementById("replyPreviewBar").classList.remove("active");
+  }
+
+  window.openChatWith = function (id, name, photoURL) {
+    activeChatUser = { id, name, photoURL };
+    resetChatInteractionState();
+    document.getElementById("conversationsView").style.display = "none";
+    document.getElementById("chatView").style.display = "block";
+    document.getElementById("chatAvatar").src = photoURL || "";
+    document.getElementById("chatName").textContent = name;
+    showTab("messages");
+
+    if (msgUnsub) msgUnsub();
+    const box = document.getElementById("chatMessages");
+    box.innerHTML = `<div class="empty-state">පූරණය වෙමින්...</div>`;
+    msgUnsub = subscribeToMessages(id, messages => {
+      latestMessages = messages;
+      renderChatMessages();
+    }, err => {
+      box.innerHTML = `<div class="error-box">${escapeHtml(err.message || 'පණිවිඩ පූරණය අසාර්ථකයි')}</div>`;
+    });
+  };
+
+  function renderChatMessages() {
+    const box = document.getElementById("chatMessages");
+    box.innerHTML = latestMessages.map(m => {
+      const mine = m.fromUid === me.id;
+      const isSelected = selectedMsgIds.has(m.id);
+      const quote = m.replyTo ? `<span class="msg-reply-quote">${escapeHtml(m.replyTo.text)}</span>` : "";
+      return `
+        <div class="msg-row ${mine ? 'me' : 'them'} ${selectionMode ? 'selectable' : ''}">
+          ${selectionMode ? `<input type="checkbox" class="msg-checkbox" style="display:inline-block;" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation(); toggleMsgSelect('${m.id}')">` : ""}
+          <div class="msg-bubble ${mine ? 'me' : 'them'} ${isSelected ? 'selected' : ''}"
+               onclick="handleBubbleClick('${m.id}')"
+               onpointerdown="startLongPress(event, '${m.id}')"
+               onpointerup="cancelLongPress()"
+               onpointerleave="cancelLongPress()"
+               oncontextmenu="event.preventDefault(); openMsgContextMenu(event, '${m.id}');">${quote}${escapeHtml(m.text)}</div>
+        </div>
+      `;
+    }).join("");
+    box.scrollTop = box.scrollHeight;
+    updateSelectBar();
+  }
+
+  function updateSelectBar() {
+    const bar = document.getElementById("chatSelectBar");
+    if (selectionMode) {
+      bar.classList.add("active");
+      document.getElementById("selCount").textContent = selectedMsgIds.size + " ක් තෝරාගෙන ඇත";
+    } else {
+      bar.classList.remove("active");
+    }
+  }
+
+  window.handleBubbleClick = function (id) {
+    if (selectionMode) toggleMsgSelect(id);
+  };
+
+  window.toggleMsgSelect = function (id) {
+    if (selectedMsgIds.has(id)) selectedMsgIds.delete(id);
+    else selectedMsgIds.add(id);
+    if (selectedMsgIds.size === 0) selectionMode = false;
+    renderChatMessages();
+  };
+
+  window.startLongPress = function (event, id) {
+    const x = event.clientX, y = event.clientY;
+    cancelLongPress();
+    longPressTimer = setTimeout(() => openMsgContextMenu({ clientX: x, clientY: y }, id), 500);
+  };
+  window.cancelLongPress = function () {
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+  };
+
+  function closeMsgContextMenu() {
+    const el = document.getElementById("msgContextMenu");
+    if (el) el.remove();
+  }
+
+  window.openMsgContextMenu = function (event, id) {
+    closeMsgContextMenu();
+    closeAllItemMenus();
+    const msg = latestMessages.find(m => m.id === id);
+    if (!msg) return;
+    const menu = document.createElement("div");
+    menu.className = "msg-context-menu";
+    menu.id = "msgContextMenu";
+    const x = Math.min(event.clientX, window.innerWidth - 180);
+    const y = Math.min(event.clientY, window.innerHeight - 190);
+    menu.style.left = x + "px";
+    menu.style.top = y + "px";
+    menu.innerHTML = `
+      <button onclick="startReply('${id}')">↩ පිළිතුරු දෙන්න</button>
+      <button onclick="copyMsgText('${id}')">📋 පිටපත් කරන්න</button>
+      <button onclick="enterSelectionMode('${id}')">☑ සලකුණු කරන්න</button>
+      <button class="danger" onclick="deleteSingleMessage('${id}')">🗑 මකන්න</button>
+    `;
+    document.body.appendChild(menu);
+    setTimeout(() => document.addEventListener("click", closeMsgContextMenu, { once: true }), 0);
+  };
+
+  window.startReply = function (id) {
+    const msg = latestMessages.find(m => m.id === id);
+    closeMsgContextMenu();
+    if (!msg) return;
+    replyingTo = { id, text: msg.text };
+    document.getElementById("replyPreviewText").textContent = msg.text;
+    document.getElementById("replyPreviewBar").classList.add("active");
+    document.getElementById("chatInput").focus();
+  };
+
+  document.getElementById("replyPreviewClose").addEventListener("click", () => {
+    replyingTo = null;
+    document.getElementById("replyPreviewBar").classList.remove("active");
+  });
+
+  function fallbackCopyText(text) {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); } catch (e) { /* ignore */ }
+    document.body.removeChild(ta);
+  }
+
+  window.copyMsgText = function (id) {
+    const msg = latestMessages.find(m => m.id === id);
+    closeMsgContextMenu();
+    if (!msg) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(msg.text).catch(() => fallbackCopyText(msg.text));
+    } else {
+      fallbackCopyText(msg.text);
+    }
+  };
+
+  window.enterSelectionMode = function (id) {
+    closeMsgContextMenu();
+    selectionMode = true;
+    selectedMsgIds = new Set([id]);
+    renderChatMessages();
+  };
+
+  window.deleteSingleMessage = async function (id) {
+    closeMsgContextMenu();
+    if (!confirm("මෙම පණිවිඩය මකන්නද?")) return;
+    try {
+      await deleteMessages([id]);
+    } catch (err) {
+      alert(err.message || "මකීම අසාර්ථකයි");
+    }
+  };
+
+  document.getElementById("selCancelBtn").addEventListener("click", () => {
+    selectionMode = false;
+    selectedMsgIds = new Set();
+    renderChatMessages();
+  });
+
+  document.getElementById("selDeleteBtn").addEventListener("click", async () => {
+    if (selectedMsgIds.size === 0) return;
+    if (!confirm(selectedMsgIds.size + " පණිවිඩ මකන්නද?")) return;
+    const ids = Array.from(selectedMsgIds);
+    try {
+      await deleteMessages(ids);
+      selectionMode = false;
+      selectedMsgIds = new Set();
+      renderChatMessages();
+    } catch (err) {
+      alert(err.message || "මකීම අසාර්ථකයි");
+    }
+  });
+
+  document.getElementById("chatHeaderLink").addEventListener("click", () => {
+    if (activeChatUser) location.href = "match.html?id=" + activeChatUser.id;
+  });
+
+  document.getElementById("chatBackBtn").addEventListener("click", () => {
+    if (msgUnsub) { msgUnsub(); msgUnsub = null; }
+    activeChatUser = null;
+    resetChatInteractionState();
+    document.getElementById("chatView").style.display = "none";
+    document.getElementById("conversationsView").style.display = "block";
+    renderConversationList();
+  });
+
+  document.getElementById("chatForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!activeChatUser) return;
+    const input = document.getElementById("chatInput");
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    const replyPayload = replyingTo ? { id: replyingTo.id, text: replyingTo.text } : null;
+    try {
+      await apiCall("/api/messages/" + activeChatUser.id, {
+        method: "POST",
+        body: JSON.stringify({ text, replyTo: replyPayload })
+      });
+      replyingTo = null;
+      document.getElementById("replyPreviewBar").classList.remove("active");
+    } catch (err) {
+      input.value = text;
+      alert(err.message);
+    }
+  });
+
+  // ---------------- photo lightbox ----------------
+  let lightboxPhotos = [];
+  let lightboxIndex = 0;
+
+  window.openLightbox = function (photos, index) {
+    lightboxPhotos = photos;
+    lightboxIndex = index;
+    document.getElementById("lightboxImg").src = lightboxPhotos[lightboxIndex];
+    document.getElementById("lightbox").style.display = "flex";
+  };
+  window.closeLightbox = function () {
+    document.getElementById("lightbox").style.display = "none";
+  };
+  window.lightboxNav = function (delta) {
+    lightboxIndex = (lightboxIndex + delta + lightboxPhotos.length) % lightboxPhotos.length;
+    document.getElementById("lightboxImg").src = lightboxPhotos[lightboxIndex];
+  };
+  document.addEventListener("keydown", (e) => {
+    if (document.getElementById("lightbox").style.display !== "flex") return;
+    if (e.key === "Escape") closeLightbox();
+    if (e.key === "ArrowLeft") lightboxNav(-1);
+    if (e.key === "ArrowRight") lightboxNav(1);
+  });
+
+  // ---------------- settings (profile) ----------------
+  const MAX_PHOTOS = 7;
+  let currentPhotos = [];
+  let photoLongPressTimer = null;
+
+  function renderCoverPhoto() {
+    const el = document.getElementById("coverPhotoPreview");
+    if (currentPhotos[0]) {
+      el.innerHTML = `<img src="${escapeHtml(currentPhotos[0])}" alt="">`;
+    } else {
+      el.innerHTML = `<div class="photo-slot-empty" style="width:100%;height:100%;">ඡායාරූපයක් නැත</div>`;
+    }
+  }
+
+  function renderPhotoGallery() {
+    const el = document.getElementById("photoGallery");
+    const gallery = currentPhotos.slice(1);
+    document.getElementById("galleryMaxLabel").textContent = MAX_PHOTOS;
+    if (gallery.length === 0) {
+      el.innerHTML = `<div class="photo-slot photo-slot-empty">ගැලරි ඡායාරූප නැත</div>`;
+      return;
+    }
+    el.innerHTML = gallery.map((url, gi) => {
+      const i = gi + 1; // real index in currentPhotos
+      return `
+      <div class="photo-slot">
+        <img src="${escapeHtml(url)}" alt=""
+          onclick="openLightbox(currentPhotos, ${i})"
+          onpointerdown="startPhotoLongPress(event, ${i})"
+          onpointerup="cancelPhotoLongPress()"
+          onpointerleave="cancelPhotoLongPress()"
+          oncontextmenu="return false;">
+      </div>`;
+    }).join("");
+  }
+
+  window.startPhotoLongPress = function (event, i) {
+    const x = event.clientX, y = event.clientY;
+    cancelPhotoLongPress();
+    photoLongPressTimer = setTimeout(() => openPhotoContextMenu({ clientX: x, clientY: y }, i), 500);
+  };
+  window.cancelPhotoLongPress = function () {
+    if (photoLongPressTimer) { clearTimeout(photoLongPressTimer); photoLongPressTimer = null; }
+  };
+
+  function closePhotoContextMenu() {
+    const el = document.getElementById("photoContextMenu");
+    if (el) el.remove();
+  }
+
+  window.openPhotoContextMenu = function (event, i) {
+    closePhotoContextMenu();
+    const menu = document.createElement("div");
+    menu.className = "msg-context-menu";
+    menu.id = "photoContextMenu";
+    const x = Math.min(event.clientX, window.innerWidth - 180);
+    const y = Math.min(event.clientY, window.innerHeight - 100);
+    menu.style.left = x + "px";
+    menu.style.top = y + "px";
+    menu.innerHTML = `
+      <button onclick="makePrimaryPhoto(${i}); closePhotoContextMenu();">★ ප්‍රධාන ඡායාරූපය කරන්න</button>
+      <button class="danger" onclick="removePhoto(${i}); closePhotoContextMenu();">🗑 මකන්න</button>
+    `;
+    document.body.appendChild(menu);
+    setTimeout(() => document.addEventListener("click", closePhotoContextMenu, { once: true }), 0);
+  };
+
+  window.makePrimaryPhoto = function (i) {
+    const [chosen] = currentPhotos.splice(i, 1);
+    currentPhotos.unshift(chosen);
+    renderCoverPhoto();
+    renderPhotoGallery();
+  };
+
+  window.removePhoto = function (i) {
+    currentPhotos.splice(i, 1);
+    renderPhotoGallery();
+  };
+
+  document.getElementById("changeCoverBtn").addEventListener("click", () => {
+    document.getElementById("coverInput").click();
+  });
+
+  document.getElementById("coverInput").addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    const preview = document.getElementById("coverPhotoPreview");
+    preview.innerHTML = `<div class="photo-slot-loading" style="width:100%;height:100%;">උඩුගත වෙමින්...</div>`;
+    try {
+      const url = await uploadPhotoToCloudinary(file);
+      if (currentPhotos.length) currentPhotos[0] = url;
+      else currentPhotos.unshift(url);
+    } catch (err) {
+      alert(err.message || "ඡායාරූපය උඩුගත කිරීම අසාර්ථකයි");
+    }
+    renderCoverPhoto();
+    renderPhotoGallery();
+  });
+
+  document.getElementById("updateGalleryBtn").addEventListener("click", () => {
+    document.getElementById("photoInput").click();
+  });
+
+  document.getElementById("photoInput").addEventListener("change", async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (!files.length) return;
+    const room = MAX_PHOTOS - currentPhotos.length;
+    if (room <= 0) { alert(`උපරිම ඡායාරූප ${MAX_PHOTOS} ක් විතරයි එකතු කළ හැක්කේ.`); return; }
+    const toUpload = files.slice(0, room);
+    const el = document.getElementById("photoGallery");
+    el.innerHTML += `<div class="photo-slot photo-slot-loading">උඩුගත වෙමින්...</div>`;
+    try {
+      for (const file of toUpload) {
+        const url = await uploadPhotoToCloudinary(file);
+        currentPhotos.push(url);
+      }
+    } catch (err) {
+      alert(err.message || "ඡායාරූපය උඩුගත කිරීම අසාර්ථකයි");
+    }
+    renderCoverPhoto();
+    renderPhotoGallery();
+  });
+
+  async function loadSettingsForm() {
+    document.getElementById("name").value = me.name || "";
+    document.getElementById("gender").value = me.gender || "";
+    document.getElementById("birthDate").value = me.birthDate || "";
+    document.getElementById("birthTime").value = me.birthTime || "";
+    populatePlaceSelect(document.getElementById("birthPlace"), me.birthPlace || "");
+    document.getElementById("bio").value = me.bio || "";
+    document.getElementById("education").value = me.education || "";
+    document.getElementById("profession").value = me.profession || "";
+    document.getElementById("facebook").value = me.facebook || "";
+    document.getElementById("whatsapp").value = me.whatsapp || "";
+    document.getElementById("religion").value = me.religion || "";
+    document.getElementById("ethnicity").value = me.ethnicity || "";
+    document.getElementById("height").value = me.height || "";
+    document.getElementById("lagnaRashi").value = me.lagnaRashiId || "";
+    document.getElementById("nakshatra").value = me.nakshatraId || "";
+    document.getElementById("rashi").value = me.rashiId || "";
+    refreshComputedPanchanga();
+
+    currentPhotos = Array.isArray(me.photos) && me.photos.length
+      ? [...me.photos]
+      : (me.photoURL ? [me.photoURL] : []);
+    renderCoverPhoto();
+    renderPhotoGallery();
+  }
+
+  // Nakshatra + Rashi are no longer picked manually — they're derived
+  // straight from birth date + birth time, and Lagna additionally
+  // from the selected birth place (see js/panchanga.js), so the
+  // member never has to know their own kendara details up front.
+  // Re-runs every time any of the three inputs changes, and fills the
+  // hidden lagnaRashi/nakshatra/rashi fields the rest of this form
+  // already reads.
+  function refreshComputedPanchanga() {
+    const box = document.getElementById("panchangaResult");
+    const birthDate = document.getElementById("birthDate").value;
+    const birthTime = document.getElementById("birthTime").value;
+    const result = calculateNakshatraRashi(birthDate, birthTime);
+    if (!result) {
+      document.getElementById("lagnaRashi").value = "";
+      document.getElementById("nakshatra").value = "";
+      document.getElementById("rashi").value = "";
+      box.innerHTML = `<span class="hint">උපන් දිනය සහ වේලාව දෙකම දෙන්න</span>`;
+      return;
+    }
+    document.getElementById("nakshatra").value = result.nakshatraId;
+    document.getElementById("rashi").value = result.rashiId;
+    const nak = getNakshatra(result.nakshatraId);
+    const rashi = getRashi(result.rashiId);
+
+    const placeSelect = document.getElementById("birthPlace");
+    const placeOpt = placeSelect.selectedOptions[0];
+    const lagnaResult = (placeOpt && placeOpt.dataset.lat)
+      ? calculateLagna(birthDate, birthTime, placeOpt.dataset.lat, placeOpt.dataset.lng)
+      : null;
+    document.getElementById("lagnaRashi").value = lagnaResult ? lagnaResult.lagnaRashiId : "";
+    const lagnaRashi = lagnaResult ? getRashi(lagnaResult.lagnaRashiId) : null;
+    const lagnaText = lagnaRashi
+      ? `ලග්නය: <strong>${lagnaRashi.si}</strong> · `
+      : `ලග්නය: <span class="hint">ස්ථානය තෝරන්න</span> · `;
+
+    box.innerHTML = `✓ ${lagnaText}නැකත: <strong>${nak ? nak.si : ''}</strong> · රාශිය: <strong>${rashi ? rashi.si : ''}</strong>`;
+  }
+  document.getElementById("birthPlace").addEventListener("change", refreshComputedPanchanga);
+  document.getElementById("birthDate").addEventListener("change", refreshComputedPanchanga);
+  document.getElementById("birthTime").addEventListener("change", refreshComputedPanchanga);
+
+  document.getElementById("profileForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("errorBox");
+    const savedMsg = document.getElementById("savedMsg");
+    errorBox.style.display = "none";
+    savedMsg.style.display = "none";
+    if (!document.getElementById("nakshatra").value || !document.getElementById("rashi").value) {
+      showError(errorBox, "නැකත/රාශිය ගණනය කිරීමට උපන් දිනය සහ උපන් වේලාව දෙකම දෙන්න.");
+      return;
+    }
+    try {
+      await apiCall("/api/me", {
+        method: "PUT",
+        body: JSON.stringify({
+          name: document.getElementById("name").value,
+          gender: document.getElementById("gender").value,
+          birthDate: document.getElementById("birthDate").value,
+          birthTime: document.getElementById("birthTime").value,
+          birthPlace: document.getElementById("birthPlace").value,
+          lagnaRashiId: document.getElementById("lagnaRashi").value,
+          bio: document.getElementById("bio").value,
+          education: document.getElementById("education").value,
+          profession: document.getElementById("profession").value,
+          facebook: document.getElementById("facebook").value,
+          whatsapp: document.getElementById("whatsapp").value,
+          religion: document.getElementById("religion").value,
+          ethnicity: document.getElementById("ethnicity").value,
+          height: document.getElementById("height").value,
+          nakshatraId: document.getElementById("nakshatra").value,
+          rashiId: document.getElementById("rashi").value,
+          photos: currentPhotos
+        })
+      });
+      const meRes = await apiCall("/api/me");
+      me = meRes.user;
+      savedMsg.style.display = "block";
+    } catch (err) {
+      showError(errorBox, err.message);
+    }
+  });
+
+  async function doLogout() {
+    if (convUnsub) convUnsub();
+    if (msgUnsub) msgUnsub();
+    if (notifUnsub) notifUnsub();
+    if (pendingStatusUnsub) pendingStatusUnsub();
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    await apiCall("/api/logout", { method: "POST" });
+    location.href = "login.html";
+  }
+  document.getElementById("settingsLogoutBtn").addEventListener("click", doLogout);
+  document.getElementById("pendingLogoutBtn").addEventListener("click", doLogout);
+
+  // ---------------- customer support chat (chats straight with admin,
+  // reusing the exact same messaging system as regular member chats) ----------------
+  // Remembers which restricted screen (pending / incomplete) support
+  // chat was opened from, so the back button returns to the right one.
+  let supportChatFrom = null;
+
+  function openSupportChat() {
+    const isPending = document.getElementById("pendingScreen").style.display !== "none";
+    const isIncomplete = document.getElementById("incompleteTopBar").style.display !== "none";
+    if (isPending || isIncomplete) {
+      // Pending/incomplete members can't use the rest of the dashboard
+      // yet, but they can still reach support — reveal just the chat
+      // panel (tabbar stays hidden so there's no way to wander into
+      // matches/feed before approval).
+      supportChatFrom = isPending ? "pending" : "incomplete";
+      document.getElementById("pendingScreen").style.display = "none";
+      document.getElementById("incompleteTopBar").style.display = "none";
+      document.getElementById("mainWrap").style.display = "block";
+      Object.values(panels).forEach(el => el.classList.remove("active"));
+      panels.messages.classList.add("active");
+      document.getElementById("pendingChatBackBar").style.display = "flex";
+    }
+    openChatWith(ADMIN_UID, "පාරිභෝගික සේවා", "img/logo2.png");
+  }
+  document.getElementById("supportFab").addEventListener("click", openSupportChat);
+  document.getElementById("pendingSupportBtn").addEventListener("click", openSupportChat);
+  document.getElementById("pendingChatBackToStatusBtn").addEventListener("click", () => {
+    if (msgUnsub) { msgUnsub(); msgUnsub = null; }
+    activeChatUser = null;
+    document.getElementById("pendingChatBackBar").style.display = "none";
+    document.getElementById("mainWrap").style.display = "none";
+    if (supportChatFrom === "incomplete") {
+      showIncompleteScreen();
+    } else {
+      document.getElementById("pendingScreen").style.display = "block";
+    }
+    supportChatFrom = null;
+  });
+
+  // ---------------- presence heartbeat (lets admin.html show who's
+  // currently online — see updateLastSeen() in api.js) ----------------
+  let heartbeatTimer = null;
+  function startHeartbeat() {
+    updateLastSeen();
+    heartbeatTimer = setInterval(updateLastSeen, 30000);
+  }
+
+  // ---------------- boot ----------------
+  let pendingStatusUnsub = null;
+
+  function showPendingScreen() {
+    document.getElementById("incompleteTopBar").style.display = "none";
+    document.getElementById("mainTabbar").style.display = "none";
+    document.getElementById("mainWrap").style.display = "none";
+    document.getElementById("supportFab").style.display = "none";
+    document.getElementById("completeProfileBanner").style.display = "none";
+    document.getElementById("pendingScreen").style.display = "block";
+  }
+
+  // Fresh signup (Google or regular) that hasn't submitted their
+  // profile for review yet. Locked to a Settings-only view — no
+  // tabbar, no floating support icon — with a small message-admin
+  // icon in the top corner instead (per the "only I can message them
+  // until verified, no popup icon" requirement) and a "submit for
+  // review" button on the profile form.
+  function showIncompleteScreen() {
+    document.getElementById("pendingScreen").style.display = "none";
+    document.getElementById("mainTabbar").style.display = "none";
+    document.getElementById("supportFab").style.display = "none";
+    document.getElementById("completeProfileBanner").style.display = "none";
+    document.getElementById("incompleteTopBar").style.display = "flex";
+    document.getElementById("mainWrap").style.display = "block";
+    Object.values(panels).forEach(el => el.classList.remove("active"));
+    panels.settings.classList.add("active");
+    document.getElementById("incompleteNotice").style.display = "block";
+    document.getElementById("submitForReviewBtn").style.display = "block";
+    document.getElementById("settingsAccountSection").style.display = "none";
+  }
+
+  // Watches my own doc while I'm incomplete/pending so any status
+  // change (submit from another tab, admin approval) updates this
+  // screen automatically with no manual refresh.
+  function watchMyStatus(wantTab, withId) {
+    if (pendingStatusUnsub) { pendingStatusUnsub(); pendingStatusUnsub = null; }
+    pendingStatusUnsub = db.collection("users").doc(me.id).onSnapshot(snap => {
+      const data = snap.data();
+      if (!data) return;
+      me = { id: me.id, ...data };
+      if (data.status === "pending") {
+        showPendingScreen();
+      } else if (data.status === "incomplete") {
+        showIncompleteScreen();
+      } else {
+        if (pendingStatusUnsub) { pendingStatusUnsub(); pendingStatusUnsub = null; }
+        showFullDashboard(wantTab, withId);
+      }
+    });
+  }
+
+  document.getElementById("submitForReviewBtn").addEventListener("click", async () => {
+    const errorBox = document.getElementById("errorBox");
+    errorBox.style.display = "none";
+    if (!document.getElementById("nakshatra").value || !document.getElementById("rashi").value) {
+      showError(errorBox, "නැකත/රාශිය ගණනය කිරීමට උපන් දිනය සහ උපන් වේලාව දෙකම දෙන්න.");
+      return;
+    }
+    const btn = document.getElementById("submitForReviewBtn");
+    btn.disabled = true;
+    try {
+      await apiCall("/api/me", {
+        method: "PUT",
+        body: JSON.stringify({
+          name: document.getElementById("name").value,
+          gender: document.getElementById("gender").value,
+          birthDate: document.getElementById("birthDate").value,
+          birthTime: document.getElementById("birthTime").value,
+          birthPlace: document.getElementById("birthPlace").value,
+          lagnaRashiId: document.getElementById("lagnaRashi").value,
+          bio: document.getElementById("bio").value,
+          education: document.getElementById("education").value,
+          profession: document.getElementById("profession").value,
+          facebook: document.getElementById("facebook").value,
+          whatsapp: document.getElementById("whatsapp").value,
+          religion: document.getElementById("religion").value,
+          ethnicity: document.getElementById("ethnicity").value,
+          height: document.getElementById("height").value,
+          nakshatraId: document.getElementById("nakshatra").value,
+          rashiId: document.getElementById("rashi").value,
+          photos: currentPhotos,
+          submit: true
+        })
+      });
+      const meRes = await apiCall("/api/me");
+      me = meRes.user;
+      showPendingScreen();
+      watchMyStatus();
+    } catch (err) {
+      showError(errorBox, err.message);
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById("incompleteMsgBtn").addEventListener("click", openSupportChat);
+  document.getElementById("incompleteLogoutBtn").addEventListener("click", doLogout);
+
+  function showFullDashboard(wantTab, withId) {
+    document.getElementById("mainTabbar").style.display = "flex";
+    document.getElementById("mainWrap").style.display = "block";
+    document.getElementById("supportFab").style.display = "flex";
+    document.getElementById("pendingScreen").style.display = "none";
+    document.getElementById("incompleteTopBar").style.display = "none";
+    // In case this account just got approved straight out of
+    // "incomplete" (skipping the submit-for-review UI reset), undo
+    // the incomplete-only Settings tweaks so it looks like a normal
+    // Settings page from here on.
+    document.getElementById("incompleteNotice").style.display = "none";
+    document.getElementById("submitForReviewBtn").style.display = "none";
+    document.getElementById("settingsAccountSection").style.display = "";
+
+    startConversationsSubscription();
+    startNotificationsSubscription();
+    startHeartbeat();
+    if (me.id === ADMIN_UID) document.getElementById("adminLink").style.display = "inline";
+    if (!me.nakshatraId || !me.rashiId) {
+      document.getElementById("completeProfileBanner").style.display = "flex";
+    }
+
+    (async () => {
+      if (withId) {
+        try {
+          const { user } = await apiCall("/api/users/" + withId);
+          openChatWith(user.id, user.name, user.photoURL);
+          history.replaceState({}, "", location.pathname);
+        } catch {
+          showTab("home");
+        }
+      } else {
+        showTab(wantTab && panels[wantTab] ? wantTab : "home");
+      }
+    })();
+  }
+
+  (async () => {
+    try {
+      const meRes = await apiCall("/api/me");
+      me = meRes.user;
+    } catch {
+      location.href = "login.html";
+      return;
+    }
+
+    await loadSettingsForm();
+
+    const params = new URLSearchParams(location.search);
+    const withId = params.get("with");
+    const wantTab = params.get("tab");
+
+    if (me.status === "incomplete") {
+      showIncompleteScreen();
+      watchMyStatus(wantTab, withId);
+      return;
+    }
+
+    if (me.status === "pending") {
+      showPendingScreen();
+      // Live-watch my own doc so the moment the admin approves me,
+      // this screen switches over to the real dashboard automatically
+      // (no manual refresh needed).
+      watchMyStatus(wantTab, withId);
+      return;
+    }
+
+    showFullDashboard(wantTab, withId);
+  })();
+</script>
+<div id="lightbox" class="lightbox" style="display:none;" onclick="if(event.target===this) closeLightbox()">
+  <button type="button" class="lightbox-close" onclick="closeLightbox()">✕</button>
+  <button type="button" class="lightbox-nav lightbox-prev" onclick="lightboxNav(-1)">‹</button>
+  <img id="lightboxImg" src="" alt="">
+  <button type="button" class="lightbox-nav lightbox-next" onclick="lightboxNav(1)">›</button>
+</div>
+<script src="js/sw-register.js"></script>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>පරිපාලක ලොගින් · Porondama</title>
+<link rel="icon" href="img/icon-192.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#04211a">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="auth-shell">
+  <div class="auth-card">
+    <h1 style="text-align:center; margin: 0 0 4px;">පරිපාලක ප්‍රවේශය</h1>
+    <p style="text-align:center; color:var(--ivory-dim); margin-top:0;">Gmail සහ මුරපදය ඇතුළත් කරන්න</p>
+
+    <form id="adminLoginForm">
+      <label for="email">Gmail</label>
+      <input id="email" type="email" required autocomplete="username">
+
+      <label for="password">මුරපදය</label>
+      <input id="password" type="password" required autocomplete="current-password">
+
+      <button type="submit" class="btn-primary">ලොග් වන්න</button>
+      <div class="error-box" id="errorBox" style="display:none;"></div>
+    </form>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+<script>
+  /**
+   * This page signs in with a REAL Firebase Auth email/password
+   * account (not the username -> fake-email trick used for regular
+   * members in login.html) — so the admin password is never written
+   * to a Firestore document anywhere.
+   *
+   * One-time setup needed in Firebase Console -> Authentication ->
+   * Users -> Add user: create an account with your own email +
+   * a password of your choice (don't write the actual password here —
+   * this file is served publicly, so anyone could view-source it).
+   * Then copy that user's UID and make sure it matches ADMIN_UID in
+   * js/firebase-config.js (and the isAdmin() check in firestore.rules)
+   * — that UID match is what actually grants admin access; this page
+   * is just the door.
+   */
+  document.getElementById("adminLoginForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("errorBox");
+    errorBox.style.display = "none";
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+    try {
+      const cred = await auth.signInWithEmailAndPassword(email, password);
+      if (cred.user.uid !== ADMIN_UID) {
+        await auth.signOut();
+        throw new Error("මෙම ගිණුමට පරිපාලක ප්‍රවේශය නැත");
+      }
+      location.href = "admin.html";
+    } catch (err) {
+      showError(errorBox, err.message || "ලොග් වීම අසාර්ථකයි");
+    }
+  });
+
+  function showError(el, message) {
+    el.textContent = message;
+    el.style.display = "block";
+  }
+</script>
+</body>
+</html>

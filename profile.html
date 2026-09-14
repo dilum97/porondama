@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>මගේ පැතිකඩ · Porondama</title>
+<link rel="icon" href="img/icon-192.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#04211a">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="topbar">
+  <a href="dashboard.html" class="brand">
+    <img src="img/logo2.png" alt="Porondama" class="brand-logo">
+  </a>
+  <div class="nav-links">
+    <a href="dashboard.html">ගැලපීම්</a>
+    <a href="#" id="logoutLink">Logout</a>
+  </div>
+</div>
+
+<div class="wrap" style="max-width:640px;">
+  <div class="profile-card">
+    <h2 style="margin-top:0;">මගේ කේන්දර විස්තර</h2>
+    <form id="profileForm">
+      <div style="display:flex; align-items:center; gap:16px; margin-bottom:6px;">
+        <img id="photoPreview" src="" alt="" style="width:72px; height:72px; border-radius:50%; object-fit:cover; background:#12132c; border:1px solid var(--border); display:none;">
+        <div>
+          <label for="photoInput" style="margin:0;">පැතිකඩ ඡායාරූපය</label>
+          <input id="photoInput" type="file" accept="image/*">
+        </div>
+      </div>
+
+      <label for="name">සම්පූර්ණ නම</label>
+      <input id="name" required>
+
+      <div class="grid-2">
+        <div>
+          <label for="birthDate">උපන් දිනය</label>
+          <input id="birthDate" type="date" required>
+        </div>
+        <div>
+          <label for="birthTime">උපන් වේලාව</label>
+          <input id="birthTime" type="time" required>
+        </div>
+      </div>
+
+      <label for="birthPlace">උපන් ස්ථානය</label>
+      <select id="birthPlace"></select>
+
+      <div class="grid-2">
+        <div>
+          <label>ලග්නය, නැකත සහ රාශිය</label>
+          <div id="panchangaResult" class="panchanga-result">
+            <span class="hint">උපන් දිනය, වේලාව සහ ස්ථානය දෙන්න</span>
+          </div>
+          <input type="hidden" id="lagnaRashi">
+          <input type="hidden" id="nakshatra">
+          <input type="hidden" id="rashi">
+        </div>
+      </div>
+
+      <label for="bio">ඔබ ගැන කෙටි විස්තරයක්</label>
+      <textarea id="bio" rows="3"></textarea>
+
+      <button type="submit" class="btn-primary">සුරකින්න</button>
+      <div class="error-box" id="errorBox" style="display:none;"></div>
+      <p id="savedMsg" style="display:none; color:var(--good); text-align:center; margin-top:12px;">සුරකින ලදී ✓</p>
+    </form>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="data/reference.js"></script>
+<script src="data/places.js"></script>
+<script src="js/matching.js"></script>
+<script src="js/astronomy-engine.min.js"></script>
+<script src="js/panchanga.js"></script>
+<script src="js/cloudinary.js"></script>
+<script src="js/api.js"></script>
+<script>
+  let me;
+  (async () => {
+    try {
+      const meRes = await apiCall("/api/me");
+      me = meRes.user;
+    } catch {
+      location.href = "login.html";
+      return;
+    }
+
+    document.getElementById("name").value = me.name || "";
+    document.getElementById("birthDate").value = me.birthDate || "";
+    document.getElementById("birthTime").value = me.birthTime || "";
+    populatePlaceSelect(document.getElementById("birthPlace"), me.birthPlace || "");
+    document.getElementById("bio").value = me.bio || "";
+    document.getElementById("lagnaRashi").value = me.lagnaRashiId || "";
+    document.getElementById("nakshatra").value = me.nakshatraId || "";
+    document.getElementById("rashi").value = me.rashiId || "";
+    refreshComputedPanchanga();
+
+    if (me.photoURL) {
+      const preview = document.getElementById("photoPreview");
+      preview.src = me.photoURL;
+      preview.style.display = "block";
+    }
+  })();
+
+  // Nakshatra + Rashi are derived from birth date + birth time, and
+  // Lagna additionally from the selected birth place (see
+  // js/panchanga.js) — instead of any of these being picked manually.
+  function refreshComputedPanchanga() {
+    const box = document.getElementById("panchangaResult");
+    const birthDate = document.getElementById("birthDate").value;
+    const birthTime = document.getElementById("birthTime").value;
+    const result = calculateNakshatraRashi(birthDate, birthTime);
+    if (!result) {
+      document.getElementById("lagnaRashi").value = "";
+      document.getElementById("nakshatra").value = "";
+      document.getElementById("rashi").value = "";
+      box.innerHTML = `<span class="hint">උපන් දිනය සහ වේලාව දෙකම දෙන්න</span>`;
+      return;
+    }
+    document.getElementById("nakshatra").value = result.nakshatraId;
+    document.getElementById("rashi").value = result.rashiId;
+    const nak = getNakshatra(result.nakshatraId);
+    const rashi = getRashi(result.rashiId);
+
+    const placeSelect = document.getElementById("birthPlace");
+    const placeOpt = placeSelect.selectedOptions[0];
+    const lagnaResult = (placeOpt && placeOpt.dataset.lat)
+      ? calculateLagna(birthDate, birthTime, placeOpt.dataset.lat, placeOpt.dataset.lng)
+      : null;
+    document.getElementById("lagnaRashi").value = lagnaResult ? lagnaResult.lagnaRashiId : "";
+    const lagnaRashi = lagnaResult ? getRashi(lagnaResult.lagnaRashiId) : null;
+    const lagnaText = lagnaRashi
+      ? `ලග්නය: <strong>${lagnaRashi.si}</strong> · `
+      : `ලග්නය: <span class="hint">ස්ථානය තෝරන්න</span> · `;
+
+    box.innerHTML = `✓ ${lagnaText}නැකත: <strong>${nak ? nak.si : ''}</strong> · රාශිය: <strong>${rashi ? rashi.si : ''}</strong>`;
+  }
+  document.getElementById("birthDate").addEventListener("change", refreshComputedPanchanga);
+  document.getElementById("birthTime").addEventListener("change", refreshComputedPanchanga);
+  document.getElementById("birthPlace").addEventListener("change", refreshComputedPanchanga);
+
+  document.getElementById("profileForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("errorBox");
+    const savedMsg = document.getElementById("savedMsg");
+    errorBox.style.display = "none";
+    savedMsg.style.display = "none";
+    try {
+      let photoURL;
+      const photoFile = document.getElementById("photoInput").files[0];
+      if (photoFile) {
+        photoURL = await uploadPhotoToCloudinary(photoFile);
+      }
+      await apiCall("/api/me", {
+        method: "PUT",
+        body: JSON.stringify({
+          name: document.getElementById("name").value,
+          birthDate: document.getElementById("birthDate").value,
+          birthTime: document.getElementById("birthTime").value,
+          birthPlace: document.getElementById("birthPlace").value,
+          lagnaRashiId: document.getElementById("lagnaRashi").value,
+          bio: document.getElementById("bio").value,
+          nakshatraId: document.getElementById("nakshatra").value,
+          rashiId: document.getElementById("rashi").value,
+          photoURL
+        })
+      });
+      savedMsg.style.display = "block";
+    } catch (err) {
+      showError(errorBox, err.message);
+    }
+  });
+
+  document.getElementById("logoutLink").addEventListener("click", async (e) => {
+    e.preventDefault();
+    await apiCall("/api/logout", { method: "POST" });
+    location.href = "login.html";
+  });
+</script>
+<script src="js/sw-register.js"></script>
+</body>
+</html>

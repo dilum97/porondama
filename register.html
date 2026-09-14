@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ලියාපදිංචි වන්න · Porondama</title>
+<link rel="icon" href="img/icon-192.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#04211a">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="auth-shell">
+  <div class="auth-card wide" id="noticeCard">
+    <h1 style="text-align:center; margin: 0 0 4px;">ලියාපදිංචි වීමට පෙර</h1>
+    <div class="notice-text" style="margin-top:18px;">
+      <p>අවිවාහක නම් පමණක් මෙම වෙබ් අඩවියට ලියාපදිංචි වන්න.</p>
+      <p>මෙය සම්ප්‍රදායික අෂ්ටකූට පොරොන්දම් ක්‍රමය මත පදනම් වූ ස්වයංක්‍රීය ගණනයකි.</p>
+      <p>ඔබගේ කේන්ද්‍රයේ ඇති උපන් වෙලාව, නැකත, රාශිය සහ අනෙකුත් දත්ත නිවැරදිව ඇතුලත් කරන්න.</p>
+      <p>ඔබගේ ෆේස්බුක් ගිණුම සහ වට්සැප් අංකය ඔබ කැමති නම් පමනක් ඇතුලත් කිරීමට හැක.</p>
+      <p>විවාහයට පෙර සම්පූර්ණ කේන්දර පරීක්ෂණයක් සඳහා පළපුරුදු ජ්‍යෝතිෂවරයෙකු හමුවීම නිර්දේශ කරමු.</p>
+    </div>
+    <label class="notice-agree">
+      <input type="checkbox" id="agreeCheckbox">
+      නියමයන් සහ කොන්දේසි වලට එකඟ වෙමි
+    </label>
+    <button type="button" class="btn-primary" id="proceedBtn" disabled>ඉදිරියට යන්න</button>
+  </div>
+
+  <!-- Minimal signup only — name / username / password. Everything
+       else (photo, horoscope details, bio, etc.) is filled in on the
+       Settings page right after this, and only reaches the admin
+       once explicitly submitted for review from there. -->
+  <div class="auth-card wide" id="regFormCard" style="display:none;">
+    <h1 style="text-align:center; margin: 0 0 4px;">නව ගිණුමක්</h1>
+    <p style="text-align:center; color:var(--ivory-dim); margin-top:0;">ගිණුම සාදා ඉදිරියේදී ඔබේ කේන්දර විස්තර සහ ඡායාරූපය settings වෙතින් එකතු කරන්න</p>
+
+    <form id="regForm">
+      <label for="name">සම්පූර්ණ නම</label>
+      <input id="name" required>
+
+      <div class="grid-2">
+        <div>
+          <label for="username">පරිශීලක නාමය</label>
+          <input id="username" required>
+        </div>
+        <div>
+          <label for="password">මුරපදය (අකුරු 6+)</label>
+          <input id="password" type="password" required minlength="6">
+        </div>
+      </div>
+
+      <button type="submit" class="btn-primary">ගිණුම සාදන්න</button>
+      <div class="error-box" id="errorBox" style="display:none;"></div>
+    </form>
+
+    <div class="link-line">දැනටමත් ගිණුමක් තිබේද? <a href="login.html">ලොග් වන්න</a></div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="data/reference.js"></script>
+<script src="js/matching.js"></script>
+<script src="js/cloudinary.js"></script>
+<script src="js/api.js"></script>
+<script>
+  document.getElementById("agreeCheckbox").addEventListener("change", (e) => {
+    document.getElementById("proceedBtn").disabled = !e.target.checked;
+  });
+  document.getElementById("proceedBtn").addEventListener("click", () => {
+    document.getElementById("noticeCard").style.display = "none";
+    document.getElementById("regFormCard").style.display = "block";
+  });
+
+  document.getElementById("regForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("errorBox");
+    errorBox.style.display = "none";
+
+    const submitBtn = e.target.querySelector("button[type=submit]");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "යවමින්...";
+    try {
+      await apiCall("/api/register", {
+        method: "POST",
+        body: JSON.stringify({
+          name: document.getElementById("name").value,
+          username: document.getElementById("username").value,
+          password: document.getElementById("password").value
+        })
+      });
+      location.href = "dashboard.html?tab=settings";
+    } catch (err) {
+      showError(errorBox, err.message);
+      submitBtn.disabled = false;
+      submitBtn.textContent = "ගිණුම සාදන්න";
+    }
+  });
+</script>
+<script src="js/sw-register.js"></script>
+</body>
+</html>
