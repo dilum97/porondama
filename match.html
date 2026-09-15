@@ -91,7 +91,7 @@
         ${(data.user.education || data.user.profession || data.user.birthPlace || data.user.religion || data.user.ethnicity || data.user.height || calculateAge(data.user.birthDate) != null) ? `
           <div class="profile-grid" style="margin-bottom:18px;">
             ${calculateAge(data.user.birthDate) != null ? `<div class="k">වයස</div><div class="v">${calculateAge(data.user.birthDate)}</div>` : ""}
-            ${data.user.height ? `<div class="k">උස</div><div class="v">${escapeHtml(data.user.height)} cm</div>` : ""}
+            ${data.user.height ? `<div class="k">උස</div><div class="v">${escapeHtml(data.user.height)} inch</div>` : ""}
             ${data.user.birthPlace ? `<div class="k">උපන් ස්ථානය</div><div class="v">${escapeHtml(data.user.birthPlace)}</div>` : ""}
             ${data.user.religion ? `<div class="k">ආගම</div><div class="v">${escapeHtml(data.user.religion)}</div>` : ""}
             ${data.user.ethnicity ? `<div class="k">ජාතිය</div><div class="v">${escapeHtml(data.user.ethnicity)}</div>` : ""}
