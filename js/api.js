@@ -279,7 +279,7 @@ async function completeGoogleSignup(user) {
 // Called the moment a profile becomes "complete" (has nakshatraId +
 // rashiId) — at registration, or later via Settings for accounts that
 // started incomplete (e.g. Google sign-in). Notifies every existing
-// opposite-gender, non-disabled user who is a 50%+ match, so people
+// opposite-gender, non-disabled user who is a 75%+ match, so people
 // don't have to open their own feed to find out a new match joined.
 async function notifyMatchesForNewProfile(uid) {
   try {
@@ -299,7 +299,7 @@ async function notifyMatchesForNewProfile(uid) {
         { nakshatraId: boy.nakshatraId, rashiId: boy.rashiId },
         { nakshatraId: girl.nakshatraId, rashiId: girl.rashiId }
       );
-      if (result.percentage < 50) return;
+      if (result.percentage < 75) return;
       const notifRef = db.collection("notifications").doc();
       batch.set(notifRef, {
         userId: other.id,
