@@ -294,6 +294,7 @@ button, .btn {
 .district-search-clear {
   position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
   width: 26px; height: 26px; border-radius: 50%; border: none; cursor: pointer;
+  padding: 0; display: flex; align-items: center; justify-content: center;
   background: rgba(255,255,255,0.08); color: var(--ivory-dim); font-size: 0.85rem; line-height: 1;
 }
 .district-search-clear:hover { background: rgba(255,255,255,0.14); color: var(--ivory); }
