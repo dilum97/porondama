@@ -1,1277 +1,938 @@
-<!DOCTYPE html>
-<html lang="si">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Porondama</title>
-<link rel="icon" href="img/icon-192.png">
-<link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#04211a">
-<link rel="stylesheet" href="css/style.css">
-</head>
-<body>
-<div class="topbar">
-  <a href="dashboard.html" class="brand">
-    <img src="img/logo2.png" alt="Porondama" class="brand-logo">
-  </a>
-  <div class="nav-links">
-    <a href="admin.html" id="adminLink" style="display:none;">පරිපාලක</a>
-  </div>
-</div>
+/**
+ * api.js (Firebase edition)
+ * ------------------------------------------------------------------
+ * Drop-in replacement for the old fetch("/api/...")-based api.js.
+ * Keeps the exact same apiCall(url, options) interface so login.html,
+ * register.html, profile.html, dashboard.html and match.html did not
+ * need to change — only the script tags loaded before this file did
+ * (see index.html/each page's <head>/<script> order).
+ *
+ * Load order required in every HTML page:
+ *   1. Firebase SDK (compat) <script> tags
+ *   2. firebase-config.js
+ *   3. data/reference.js
+ *   4. js/matching.js
+ *   5. js/cloudinary.js
+ *   6. js/api.js   <-- this file
+ * ------------------------------------------------------------------
+ *
+ * NEW (feed + messaging):
+ *   - GET  /api/feed             -> people I'm >=50% matched with who
+ *                                    have a profile photo (for the
+ *                                    Home tab scroll feed)
+ *   - GET  /api/users/:id        -> public info for one user
+ *   - GET  /api/conversations    -> my conversation list, newest first
+ *   - GET  /api/messages/:id     -> one-shot message history with :id
+ *   - POST /api/messages/:id     -> send a message to :id
+ *   - subscribeToConversations(cb) / subscribeToMessages(otherUid, cb)
+ *     are realtime (onSnapshot) helpers used by the Messages tab —
+ *     they live outside apiCall() since they are streaming, not
+ *     request/response.
+ *
+ * Firestore collections used by messaging (create these Security
+ * Rules in the Firebase console — Firestore Database -> Rules):
+ *   match /messages/{msgId} {
+ *     allow read: if request.auth != null &&
+ *       request.auth.uid in resource.data.participants;
+ *     allow create: if request.auth != null &&
+ *       request.resource.data.fromUid == request.auth.uid &&
+ *       request.auth.uid in request.resource.data.participants &&
+ *       request.resource.data.toUid in request.resource.data.participants;
+ *   }
+ *   match /conversations/{convId} {
+ *     allow read, write: if request.auth != null &&
+ *       request.auth.uid in resource.data.participants;
+ *     allow create: if request.auth != null &&
+ *       request.auth.uid in request.resource.data.participants;
+ *   }
+ *   match /notifications/{notifId} {
+ *     allow create: if request.auth != null &&
+ *       request.resource.data.actorUid == request.auth.uid;
+ *     allow read, update, delete: if request.auth != null &&
+ *       request.auth.uid == resource.data.userId;
+ *   }
+ * IMPORTANT: message docs must include a `participants: [fromUid, toUid]`
+ * array field (same idea as conversations) — Firestore rejects any
+ * list/onSnapshot query with "Missing or insufficient permissions"
+ * unless the query's own where() filters line up with the fields the
+ * rule checks. Filtering only by conversationId while the rule checks
+ * fromUid/toUid does NOT satisfy that, even when the data itself would
+ * pass — hence the extra .where("participants","array-contains",uid).
+ *
+ * The first time /api/conversations, /api/messages/:id, or
+ * subscribeToConversations/subscribeToMessages runs, Firestore may
+ * print a console error with a link to auto-create the required
+ * composite index — just click that link once per query.
+ * ------------------------------------------------------------------
+ */
 
-<div id="completeProfileBanner" class="complete-profile-banner" style="display:none;">
-  <span>ඔබට ගැලපෙනම සහකාරිය සොයා ගැනීමට settings වෙත ගොස් ඔබගේ කේන්දරයේ විස්තර ඇතුලත් කරන්න.</span>
-  <div class="complete-profile-actions">
-    <button type="button" class="banner-close-btn" id="completeProfileCloseBtn">✕</button>
-  </div>
-</div>
+function showError(el, message) {
+  el.textContent = message;
+  el.style.display = "block";
+}
 
-<!-- ============ PENDING APPROVAL SCREEN ============ -->
-<div id="pendingScreen" class="wrap" style="display:none; text-align:center; max-width:560px;">
-  <div class="profile-card">
-    <h2 style="margin-top:0;">ඔබගේ ලියාපදිංචිය සමාලෝචනය වෙමින් පවතී</h2>
-    <p style="color:var(--ivory-dim);">ඔබගේ විස්තර සහ ඡායාරූපය පරිපාලකවරයා විසින් සමාලෝචනය කරමින් සිටී. අනුමත වූ පසු මෙම පිටුව ස්වයංක්‍රීයව සයිට් එකට යාවත්කාලීන වේ.</p>
-    <button type="button" class="btn btn-secondary" id="pendingSupportBtn" style="width:auto; margin-top:10px;">පරිපාලක සමඟ කතා කරන්න</button>
-    <button type="button" class="btn btn-secondary" id="pendingLogoutBtn" style="width:auto; margin-top:10px; margin-left:8px;">Logout</button>
-  </div>
-</div>
+function populateSelect(select, items, labelFn) {
+  select.innerHTML = '<option value="">-- Select --</option>' +
+    items.map(i => `<option value="${i.id}">${labelFn(i)}</option>`).join("");
+}
 
-<div id="pendingChatBackBar" style="display:none; padding:10px 20px; border-bottom:1px solid var(--border);">
-  <button type="button" class="btn btn-secondary" id="pendingChatBackToStatusBtn" style="width:auto;">← ලියාපදිංචි තත්ත්වයට</button>
-</div>
+async function loadReference() {
+  return getReferenceLists();
+}
 
-<!-- ============ INCOMPLETE-PROFILE TOP BAR ============ -->
-<!-- Shown only while status is "incomplete" (fresh signup, not yet
-     submitted). No floating popup message icon on this screen — just
-     this one small icon in the corner, per the "only I should be
-     able to message them until verified" requirement. -->
-<div id="incompleteTopBar" style="display:none; align-items:center; justify-content:space-between; padding:12px 20px; border-bottom:1px solid var(--border); background:var(--night-2);">
-  <div style="font-size:0.9rem; color:var(--ivory-dim);">ඔබගේ පැතිකඩ සම්පූර්ණ කරන්න</div>
-  <div style="display:flex; align-items:center; gap:6px;">
-    <button type="button" class="btn btn-secondary" id="incompleteMsgBtn" title="පරිපාලක සමඟ කතා කරන්න" style="width:auto; padding:8px 10px;">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5.5h16a1 1 0 0 1 1 1V17a1 1 0 0 1-1 1H8l-4 3.5V6.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
-    </button>
-    <button type="button" class="btn btn-secondary" id="incompleteLogoutBtn" style="width:auto;">Logout</button>
-  </div>
-</div>
+// ---- internal helpers --------------------------------------------
 
-<div class="tabbar" id="mainTabbar">
-  <button class="tab-btn" data-tab="home">
-    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 11.5L12 4l9 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.5 10v9a1 1 0 0 0 1 1H9a1 1 0 0 0 1-1v-4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v4a1 1 0 0 0 1 1h2.5a1 1 0 0 0 1-1v-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-  </button>
-  <button class="tab-btn" data-tab="matches">
-    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 20.5s-7.5-4.6-9.8-9.1C.6 8.1 2 4.8 5.2 4.1c2-.4 3.9.5 5 2.1a1 1 0 0 0 1.6 0c1.1-1.6 3-2.5 5-2.1 3.2.7 4.6 4 3 7.3-2.3 4.5-9.8 9.1-9.8 9.1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
-  </button>
-  <button class="tab-btn" data-tab="messages">
-    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5.5h16a1 1 0 0 1 1 1V17a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m4 6.5 8 6.5 8-6.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    <span class="badge" id="unreadBadge" style="display:none;"></span>
-  </button>
-  <button class="tab-btn" data-tab="notifications" id="notifBell" aria-label="දැනුම්දීම්">
-    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-    <span class="badge" id="notifBadge" style="display:none;"></span>
-  </button>
-  <button class="tab-btn" data-tab="settings">
-    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
-  </button>
-</div>
+function currentUid() {
+  const u = auth.currentUser;
+  if (!u) throw new Error("ලොග් වී නැත");
+  return u.uid;
+}
 
-<div class="wrap" id="mainWrap">
+// Like currentUid(), but waits for Firebase to finish restoring the
+// session first. On a fresh page load (e.g. opening match.html
+// directly, or a full-page location.href navigation) auth.currentUser
+// is still null for a brief moment while Firebase checks local
+// storage — using currentUid() there throws a false "ලොග් වී නැත"
+// error even though the user IS logged in. Every apiCall() endpoint
+// below that needs the current user should use this instead.
+async function requireUid() {
+  const user = await waitForAuthReady();
+  if (!user) throw new Error("ලොග් වී නැත");
+  return user.uid;
+}
 
-  <!-- ============ HOME (feed) ============ -->
-  <div class="tab-panel" id="panel-home">
-    <div class="section-title">
-      <h2>ඔබට හොඳින්ම ගැලපෙන අය</h2>
-      <span class="hint">50%+ ගැලපීම්, ඡායාරූප සහිතව</span>
-    </div>
-    <div id="feedList" class="feed-scroll"><div class="empty-state">පූරණය වෙමින්...</div></div>
-  </div>
+async function getUserDoc(uid) {
+  const snap = await db.collection("users").doc(uid).get();
+  if (!snap.exists) throw new Error("පරිශීලක තොරතුරු හමු නොවීය");
+  return { id: snap.id, ...snap.data() };
+}
 
-  <!-- ============ MATCHES ============ -->
-  <div class="tab-panel" id="panel-matches">
-    <div class="section-title">
-      <h2>ඔබට ගැලපෙන අය</h2>
-      <span class="hint" id="countHint"></span>
-    </div>
-    <div id="matchList" class="match-list"><div class="empty-state">පූරණය වෙමින්...</div></div>
-  </div>
+async function waitForAuthReady() {
+  if (auth.currentUser) return auth.currentUser;
+  return new Promise(resolve => {
+    const unsub = auth.onAuthStateChanged(user => { unsub(); resolve(user); });
+  });
+}
 
-  <!-- ============ MESSAGES ============ -->
-  <div class="tab-panel" id="panel-messages">
-    <div id="conversationsView">
-      <div class="section-title">
-        <h2>පණිවිඩ</h2>
-        <span class="hint"></span>
-      </div>
-      <div id="convList" class="conv-list"><div class="empty-state">පූරණය වෙමින්...</div></div>
-    </div>
+// Accounts created before the approval-workflow update have no
+// `status` field at all — treat those as already-approved so
+// existing members don't suddenly disappear from feeds/matches.
+// New accounts now start as "incomplete" (still filling in Settings,
+// not yet in the admin queue), then "pending" once they submit for
+// review (enforced in firestore.rules too), then "approved" by the
+// admin.
+function isApproved(u) {
+  return u.status === "approved" || u.status === undefined;
+}
 
-    <div id="chatView" style="display:none;">
-      <div class="chat-shell">
-        <div class="chat-header">
-          <button class="back-btn" id="chatBackBtn">←</button>
-          <button type="button" class="chat-header-link" id="chatHeaderLink">
-            <img id="chatAvatar" class="conv-avatar" src="" alt="">
-            <div class="conv-name" id="chatName"></div>
-          </button>
-        </div>
-        <div class="chat-select-bar" id="chatSelectBar">
-          <div class="sel-count" id="selCount"></div>
-          <button type="button" class="sel-delete" id="selDeleteBtn">මකන්න</button>
-          <button type="button" class="sel-cancel" id="selCancelBtn">අවලංගු</button>
-        </div>
-        <div class="chat-messages" id="chatMessages"></div>
-        <div class="reply-preview-bar" id="replyPreviewBar">
-          <div class="rp-text" id="replyPreviewText"></div>
-          <button type="button" class="rp-close" id="replyPreviewClose">✕</button>
-        </div>
-        <form class="chat-input-row" id="chatForm">
-          <input id="chatInput" placeholder="පණිවිඩයක් ලියන්න..." autocomplete="off">
-          <button type="submit" class="btn btn-primary" style="margin-top:0; width:auto;">යවන්න</button>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  <!-- ============ NOTIFICATIONS ============ -->
-  <div class="tab-panel" id="panel-notifications">
-    <div class="section-title">
-      <h2>දැනුම්දීම්</h2>
-      <span class="hint"></span>
-    </div>
-    <div id="notifPageList" class="notif-list"><div class="empty-state">පූරණය වෙමින්...</div></div>
-  </div>
-
-  <!-- ============ SETTINGS ============ -->
-  <div class="tab-panel" id="panel-settings">
-    <div class="profile-card" style="max-width:620px; margin:0 auto;">
-      <div class="settings-section">
-        <h3>මගේ කේන්දර විස්තර</h3>
-        <p class="hint" id="settingsHint">ඔබේ පැතිකඩ තොරතුරු සහ ඡායාරූපය මෙතනින් යාවත්කාලීන කරන්න</p>
-        <div id="incompleteNotice" style="display:none; background:rgba(223,153,31,0.12); border:1px solid var(--border); border-radius:8px; padding:10px 14px; margin-bottom:16px; font-size:0.85rem; color:var(--ivory);">
-          නම, ස්ත්‍රී/පුරුෂ භාවය, නැකත, රාශිය සහ ඡායාරූපයක් අනිවාර්යයි. සියල්ල පුරවා පහළින් <strong>"සමාලෝචනය සඳහා යවන්න"</strong> ඔබන්න.
-        </div>
-        <form id="profileForm">
-          <label style="margin-top:0;">ප්‍රධාන ඡායාරූපය (Cover Photo)</label>
-          <div class="cover-photo-row">
-            <div class="cover-photo-preview" id="coverPhotoPreview"></div>
-            <button type="button" class="btn btn-secondary" id="changeCoverBtn" style="width:auto;">ඡායාරූපය මාරු කරන්න</button>
-            <input id="coverInput" type="file" accept="image/*" style="display:none;">
-          </div>
-
-          <label style="margin-top:18px;">ඡායාරූප ගැලරිය (උපරිම <span id="galleryMaxLabel">7</span>)</label>
-          <div class="photo-gallery" id="photoGallery"></div>
-          <button type="button" class="btn btn-secondary" id="updateGalleryBtn" style="width:auto; margin-top:10px;">ගැලරිය යාවත්කාලීන කරන්න</button>
-          <input id="photoInput" type="file" accept="image/*" multiple style="display:none;">
-
-          <label for="name">සම්පූර්ණ නම</label>
-          <input id="name" required>
-
-          <label for="gender">ස්ත්‍රී/පුරුෂ භාවය</label>
-          <select id="gender" required>
-            <option value="">-- Select --</option>
-            <option value="female">ස්ත්‍රී</option>
-            <option value="male">පුරුෂ</option>
-          </select>
-
-          <div class="grid-2">
-            <div>
-              <label for="birthDate">උපන් දිනය</label>
-              <input id="birthDate" type="date" required>
-            </div>
-            <div>
-              <label for="birthTime">උපන් වේලාව</label>
-              <input id="birthTime" type="time" required>
-            </div>
-          </div>
-
-          <label for="birthPlace">උපන් ස්ථානය</label>
-          <select id="birthPlace"></select>
-
-          <div class="grid-2">
-            <div>
-              <label>ලග්නය, නැකත සහ රාශිය</label>
-              <div id="panchangaResult" class="panchanga-result">
-                <span class="hint">උපන් දිනය, වේලාව සහ ස්ථානය දෙන්න</span>
-              </div>
-              <input type="hidden" id="lagnaRashi">
-              <input type="hidden" id="nakshatra">
-              <input type="hidden" id="rashi">
-            </div>
-          </div>
-
-          <div class="grid-2">
-            <div>
-              <label for="education">අධ්‍යාපනය</label>
-              <input id="education" placeholder="උදා: BSc, University of Colombo">
-            </div>
-            <div>
-              <label for="profession">වෘත්තිය</label>
-              <input id="profession" placeholder="උදා: Software Engineer">
-            </div>
-          </div>
-
-          <div class="grid-2">
-            <div>
-              <label for="religion">ආගම</label>
-              <select id="religion">
-                <option value="">-- Select --</option>
-                <option value="බුද්ධාගම">බුද්ධාගම</option>
-                <option value="හින්දු">හින්දු</option>
-                <option value="ක්‍රිස්තියානි">ක්‍රිස්තියානි</option>
-                <option value="කතෝලික">කතෝලික</option>
-                <option value="ඉස්ලාම්">ඉස්ලාම්</option>
-                <option value="අනෙකුත්">අනෙකුත්</option>
-              </select>
-            </div>
-            <div>
-              <label for="ethnicity">ජාතිය</label>
-              <select id="ethnicity">
-                <option value="">-- Select --</option>
-                <option value="සිංහල">සිංහල</option>
-                <option value="දෙමළ">දෙමළ</option>
-                <option value="මුස්ලිම්">මුස්ලිම්</option>
-                <option value="බර්ගර්">බර්ගර්</option>
-                <option value="අනෙකුත්">අනෙකුත්</option>
-              </select>
-            </div>
-          </div>
-
-          <label for="height">උස (cm)</label>
-          <input id="height" type="number" min="100" max="250" placeholder="උදා: 170">
-
-          <div class="grid-2">
-            <div>
-              <label for="facebook">Facebook ගිණුම</label>
-              <input id="facebook" type="url" placeholder="https://facebook.com/yourname">
-            </div>
-            <div>
-              <label for="whatsapp">WhatsApp අංකය</label>
-              <input id="whatsapp" type="tel" placeholder="94771234567">
-            </div>
-          </div>
-
-          <label for="bio">ඔබ ගැන කෙටි විස්තරයක්</label>
-          <textarea id="bio" rows="3"></textarea>
-
-          <button type="submit" class="btn-primary">සුරකින්න</button>
-          <button type="button" class="btn-primary" id="submitForReviewBtn" style="display:none; background:var(--good);">සමාලෝචනය සඳහා යවන්න</button>
-          <div class="error-box" id="errorBox" style="display:none;"></div>
-          <p id="savedMsg" style="display:none; color:var(--good); text-align:center; margin-top:12px;">සුරකින ලදී ✓</p>
-        </form>
-      </div>
-
-      <div class="settings-section" style="margin-bottom:0;" id="settingsAccountSection">
-        <h3>ගිණුම</h3>
-        <p class="hint">ඔබේ ගිණුමෙන් ඉවත් වන්න</p>
-        <button class="btn btn-secondary" id="settingsLogoutBtn" style="width:100%;">Logout</button>
-      </div>
-    </div>
-  </div>
-
-</div>
-
-<button type="button" id="supportFab" class="support-fab" aria-label="පාරිභෝගික සේවා" title="පාරිභෝගික සේවා">
-  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5.5h16a1 1 0 0 1 1 1V17a1 1 0 0 1-1 1H8l-4 3.5V6.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
-</button>
-
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="js/firebase-config.js"></script>
-<script src="data/reference.js"></script>
-<script src="data/places.js"></script>
-<script src="js/matching.js"></script>
-<script src="js/astronomy-engine.min.js"></script>
-<script src="js/panchanga.js"></script>
-<script src="js/cloudinary.js"></script>
-<script src="js/api.js"></script>
-<script>
-  function escapeHtml(s) {
-    const div = document.createElement("div");
-    div.textContent = s == null ? "" : s;
-    return div.innerHTML;
-  }
-
-  function timeAgo(ts) {
-    if (!ts || !ts.toDate) return "";
-    const diffMs = Date.now() - ts.toDate().getTime();
-    const mins = Math.floor(diffMs / 60000);
-    if (mins < 1) return "දැන්";
-    if (mins < 60) return mins + "මි";
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return hrs + "ප";
-    return Math.floor(hrs / 24) + "දි";
-  }
-
-  let me = null;
-  let convUnsub = null;
-  let msgUnsub = null;
-  let activeChatUser = null; // { id, name, photoURL }
-
-  // ---------------- tabs ----------------
-  const tabButtons = document.querySelectorAll(".tab-btn[data-tab]");
-  const panels = {
-    home: document.getElementById("panel-home"),
-    matches: document.getElementById("panel-matches"),
-    messages: document.getElementById("panel-messages"),
-    notifications: document.getElementById("panel-notifications"),
-    settings: document.getElementById("panel-settings")
-  };
-
-  function showTab(name) {
-    tabButtons.forEach(b => b.classList.toggle("active", b.dataset.tab === name));
-    Object.entries(panels).forEach(([k, el]) => el.classList.toggle("active", k === name));
-    if (name === "home") loadFeed();
-    if (name === "matches") loadMatches();
-    if (name === "messages" && !activeChatUser) loadConversations();
-    if (name === "notifications") renderNotifPage();
-  }
-
-  tabButtons.forEach(btn => {
-    btn.addEventListener("click", () => {
-      // Tapping the Messages tab icon itself should always land on
-      // the conversation list — opening a specific chat only happens
-      // via openChatWith() (clicking a name, or a "with" deep link).
-      if (btn.dataset.tab === "messages" && activeChatUser) {
-        if (msgUnsub) { msgUnsub(); msgUnsub = null; }
-        activeChatUser = null;
-        document.getElementById("chatView").style.display = "none";
-        document.getElementById("conversationsView").style.display = "block";
-      }
-      showTab(btn.dataset.tab);
+// Presence heartbeat — call every ~30s from an approved, logged-in
+// session (see dashboard.html) so admin.html can show who's online.
+// "Online" is just "lastSeen within the last couple of minutes",
+// computed client-side in admin.html — there's no separate presence
+// system here, just a timestamp bumped on the user's own doc, which
+// the existing update rule already allows (status is left untouched).
+async function updateLastSeen() {
+  try {
+    const uid = await requireUid();
+    await db.collection("users").doc(uid).update({
+      lastSeen: firebase.firestore.FieldValue.serverTimestamp()
     });
+  } catch (e) { /* best-effort — a missed heartbeat is not worth surfacing */ }
+}
+
+function orderByGender(me, other) {
+  // Porondam factors like varna/star-count are directional
+  // (boy -> girl). Default to `me` as boy unless `me` is female.
+  if (me.gender === "female") return { boy: other, girl: me };
+  return { boy: me, girl: other };
+}
+
+function toPublicUser(u) {
+  return {
+    id: u.id,
+    name: u.name,
+    birthPlace: u.birthPlace || "",
+    birthDate: u.birthDate || "",
+    photoURL: u.photoURL || "",
+    bio: u.bio || "",
+    education: u.education || "",
+    profession: u.profession || "",
+    religion: u.religion || "",
+    ethnicity: u.ethnicity || "",
+    height: u.height || "",
+    facebook: u.facebook || "",
+    whatsapp: u.whatsapp || "",
+    photos: Array.isArray(u.photos) ? u.photos : []
+  };
+}
+
+// Age in whole years from a "YYYY-MM-DD" birth date string, or null
+// if the date is missing/invalid. Shared by dashboard.html and
+// match.html (both already load this file).
+function calculateAge(birthDateStr) {
+  if (!birthDateStr) return null;
+  const dob = new Date(birthDateStr);
+  if (isNaN(dob.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const beforeBirthdayThisYear = (today.getMonth() < dob.getMonth())
+    || (today.getMonth() === dob.getMonth() && today.getDate() < dob.getDate());
+  if (beforeBirthdayThisYear) age--;
+  return age >= 0 ? age : null;
+}
+
+// conversationId is deterministic for a pair of uids so both sides
+// always land on the same conversation/message thread regardless of
+// who started it.
+function conversationIdFor(uidA, uidB) {
+  return [uidA, uidB].sort().join("_");
+}
+
+// A conversation is unread for `uid` only if the other person sent
+// the last message AND `uid` hasn't opened/read the thread since
+// then (readAt[uid] missing, or older than lastMessageAt). This
+// replaces the old "lastSenderId !== me" check, which never cleared
+// once you'd actually read a message — it only reset when YOU sent a
+// reply.
+function isConversationUnread(data, uid) {
+  if (data.lastSenderId === uid || !data.lastMessageAt) return false;
+  const readTs = data.readAt && data.readAt[uid];
+  if (!readTs) return true;
+  try { return readTs.toMillis() < data.lastMessageAt.toMillis(); }
+  catch { return true; }
+}
+
+// Call when the user opens (or is actively viewing) a conversation,
+// so the unread flag clears. Best-effort: a brand-new conversation
+// with no Firestore doc yet (first message not sent either way) has
+// nothing to mark, so failures here are swallowed rather than
+// blocking the chat UI.
+async function markConversationRead(otherUid) {
+  try {
+    const uid = await requireUid();
+    const convId = conversationIdFor(uid, otherUid);
+    // Dot-notation key so merge:true only touches this user's entry
+    // inside the readAt map, instead of replacing the whole map (a
+    // plain nested-object merge in Firestore overwrites the entire
+    // nested field rather than merging its keys).
+    await db.collection("conversations").doc(convId).set({
+      [`readAt.${uid}`]: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (err) {
+    console.warn("markConversationRead failed:", err);
+  }
+}
+
+// Step 1: just the Firebase Auth popup + a check of whether this
+// Google account already has a Firestore profile. Does NOT create
+// the profile — that only happens once the person has agreed to the
+// registration notice (see completeGoogleSignup below). This lets
+// login.html decide: existing account -> straight into the site,
+// brand-new account -> show the notice first.
+async function googleSignInAuthOnly() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  const result = await auth.signInWithPopup(provider);
+  const user = result.user;
+  const snap = await db.collection("users").doc(user.uid).get();
+  return { user, isNewUser: !snap.exists };
+}
+
+// Step 2: create the Firestore profile doc for a brand-new Google
+// account. Called only after the person agrees to the notice.
+async function completeGoogleSignup(user) {
+  // No fields are required here anymore — not even a photo. The
+  // person is dropped straight into Settings (dashboard.html locks
+  // them to a Settings-only view while status is "incomplete") to
+  // fill in everything, including photo, then explicitly submits for
+  // admin review — see the `submit: true` branch of PUT /api/me below.
+  const photoURL = user.photoURL || "";
+  await db.collection("users").doc(user.uid).set({
+    name: user.displayName || "",
+    usernameLower: "",
+    authProvider: "google",
+    gender: "",
+    birthDate: "",
+    birthTime: "",
+    birthPlace: "",
+    nakshatraId: null,
+    rashiId: null,
+    lagnaRashiId: null,
+    bio: "",
+    education: "",
+    profession: "",
+    facebook: "",
+    whatsapp: "",
+    photoURL,
+    photos: photoURL ? [photoURL] : [],
+    status: "incomplete",
+    disabled: false,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
   });
+  // NOTE: this account is "incomplete", not "pending" yet — it won't
+  // show up in the admin's request queue (GET /api/admin/requests
+  // only reads status=="pending") until the person finishes their
+  // profile in Settings and hits "submit for review".
+}
 
-  document.getElementById("completeProfileCloseBtn").addEventListener("click", () => {
-    document.getElementById("completeProfileBanner").style.display = "none";
-  });
+// ---- main entry point: same signature as the old fetch-based one --
 
-  // ---------------- notifications ----------------
-  let notifUnsub = null;
-  let latestNotifications = [];
-
-  function renderNotifPage() {
-    const list = document.getElementById("notifPageList");
-    if (latestNotifications.length === 0) {
-      list.innerHTML = `<div class="empty-state">නව දැනුම්දීම් නැත</div>`;
-      return;
-    }
-    list.innerHTML = latestNotifications.map(n => `
-      <button class="notif-item ${n.read ? '' : 'unread'}" onclick="openNotification('${n.id}','${n.type}','${n.subjectUid}','${escapeHtml(n.subjectName)}','${escapeHtml(n.subjectPhoto)}')">
-        <img class="conv-avatar" src="${escapeHtml(n.subjectPhoto)}" alt="">
-        <div class="conv-info">
-          <div class="conv-name">${n.type === 'match' ? '🎉 ' : ''}${escapeHtml(n.subjectName)}</div>
-          <div class="conv-last">${escapeHtml(n.text)}</div>
-        </div>
-        <div class="conv-time">${timeAgo(n.createdAt)}</div>
-      </button>
-    `).join("");
-  }
-
-  function startNotificationsSubscription() {
-    notifUnsub = subscribeToNotifications(notifications => {
-      latestNotifications = notifications;
-      const unread = notifications.filter(n => !n.read).length;
-      const badge = document.getElementById("notifBadge");
-      if (unread > 0) { badge.textContent = unread; badge.style.display = "inline-block"; }
-      else { badge.style.display = "none"; }
-      if (panels.notifications.classList.contains("active")) renderNotifPage();
-    }, err => console.error("subscribeToNotifications failed:", err));
-  }
-
-  window.openNotification = function (notifId, type, subjectUid, subjectName, subjectPhoto) {
-    markNotificationRead(notifId);
-    if (type === "message") {
-      openChatWith(subjectUid, subjectName, subjectPhoto);
-    } else if (type === "approved") {
-      // Nothing to open — the pending screen already switches itself
-      // over automatically as soon as status changes.
-    } else {
-      location.href = "match.html?id=" + subjectUid;
-    }
-  };
-
-  document.addEventListener("click", () => {
-    closeAllItemMenus();
-  });
-
-  // ---------------- home / feed ----------------
-  async function loadFeed() {
-    const el = document.getElementById("feedList");
-    try {
-      const { feed } = await apiCall("/api/feed");
-      if (feed.length === 0) {
-        el.innerHTML = `<div class="empty-state">තවම ශක්තිමත් ගැලපීම් (50%+) හමු නොවීය.</div>`;
-        return;
-      }
-      el.innerHTML = feed.map(f => `
-        <div class="feed-card" onclick="location.href='match.html?id=${f.user.id}'" style="cursor:pointer;">
-          <img class="feed-photo" src="${escapeHtml(f.user.photoURL)}" alt="${escapeHtml(f.user.name)}">
-          <div class="feed-body">
-            <span class="feed-pct">${f.percentage}% ගැලපීම</span>
-            <p class="feed-name">${escapeHtml(f.user.name)}</p>
-            <div class="feed-meta">${calculateAge(f.user.birthDate) != null ? 'වයස ' + calculateAge(f.user.birthDate) + ' · ' : ''}${f.user.birthPlace ? escapeHtml(f.user.birthPlace) + " · " : ""}ලකුණු ${f.totalScore}/${f.totalMax}</div>
-            <div class="feed-actions">
-              <button class="btn detail-btn" onclick="event.stopPropagation(); location.href='match.html?id=${f.user.id}'">විස්තර</button>
-              <button class="btn btn-primary" style="margin-top:0;" onclick="event.stopPropagation(); openChatWith('${f.user.id}','${escapeHtml(f.user.name)}','${escapeHtml(f.user.photoURL)}')">පණිවිඩය</button>
-            </div>
-          </div>
-        </div>
-      `).join("");
-    } catch (err) {
-      el.innerHTML = `<div class="error-box">${escapeHtml(err.message)}</div>`;
-    }
-  }
-
-  // ---------------- matches ----------------
-  async function loadMatches() {
-    const list = document.getElementById("matchList");
-    try {
-      const { matches } = await apiCall("/api/matches");
-      document.getElementById("countHint").textContent = matches.length + " ගැලපීම් හමු විය";
-      if (matches.length === 0) {
-        list.innerHTML = `<div class="empty-state">තවම වෙනත් අය ලියාපදිංචි වී නැත. පසුව නැවත බලන්න.</div>`;
-        return;
-      }
-      list.innerHTML = matches.map(m => `
-        <div class="match-card" onclick="location.href='match.html?id=${m.user.id}'" style="cursor:pointer;">
-          <div class="match-photo-wrap">
-            ${m.user.photoURL ? `<img class="match-photo" src="${escapeHtml(m.user.photoURL)}" alt="${escapeHtml(m.user.name)}">` : `<div class="match-photo match-photo-empty"></div>`}
-            <div class="ring ring-sm" style="--pct:${m.percentage}"><span>${m.percentage}%</span></div>
-          </div>
-          <div>
-            <p class="match-name">${escapeHtml(m.user.name)}</p>
-            <div class="match-meta">${calculateAge(m.user.birthDate) != null ? 'වයස ' + calculateAge(m.user.birthDate) + ' · ' : ''}${m.user.birthPlace ? escapeHtml(m.user.birthPlace) + " · " : ""}පොරොන්දම් ලකුණු ${m.totalScore}/${m.totalMax}</div>
-            ${m.doshas.map(d => `<span class="dosha-tag">${escapeHtml(d)}</span>`).join("")}
-          </div>
-          <div class="match-card-actions">
-            <button class="btn detail-btn" onclick="event.stopPropagation(); location.href='match.html?id=${m.user.id}'">විස්තර</button>
-            <button class="btn btn-primary" style="margin-top:0;" onclick="event.stopPropagation(); openChatWith('${m.user.id}','${escapeHtml(m.user.name)}','${escapeHtml(m.user.photoURL)}')">පණිවිඩය</button>
-          </div>
-        </div>
-      `).join("");
-    } catch (err) {
-      list.innerHTML = `<div class="error-box">${escapeHtml(err.message)}</div>`;
-    }
-  }
-
-  // ---------------- messages ----------------
-  // One conversations subscription runs for the whole session (started
-  // at boot) so the Messages tab badge stays current even while the
-  // user is on another tab; loadConversations() just (re)renders the
-  // list from the latest snapshot when the tab is opened.
-  let latestConversations = null;
-  let conversationsError = null;
-
-  function renderConversationList() {
-    const list = document.getElementById("convList");
-    if (conversationsError) {
-      list.innerHTML = `<div class="error-box">${escapeHtml(conversationsError)}</div>`;
-      return;
-    }
-    if (!latestConversations) return;
-    if (latestConversations.length === 0) {
-      list.innerHTML = `<div class="empty-state">තවම පණිවිඩ නැත. ගැලපීමක් වෙත ගොස් පණිවිඩයක් යවන්න.</div>`;
-      return;
-    }
-    list.innerHTML = latestConversations.map(c => `
-      <div class="conv-item" onclick="openChatWith('${c.user.id}','${escapeHtml(c.user.name)}','${escapeHtml(c.user.photoURL)}')">
-        <img class="conv-avatar" src="${escapeHtml(c.user.photoURL)}" alt="">
-        <button type="button" class="conv-menu-btn" onclick="toggleConvMenu(event, '${c.user.id}')">⋮</button>
-        <div class="conv-info">
-          <div class="conv-name">${escapeHtml(c.user.name)}</div>
-          <div class="conv-last ${c.lastSenderId !== me.id ? 'unread' : ''}">${escapeHtml(c.lastMessage)}</div>
-        </div>
-        <div class="conv-time">${timeAgo(c.lastMessageAt)}</div>
-        <div class="item-dropdown" id="convMenu-${c.user.id}" style="display:none;" onclick="event.stopPropagation()">
-          <button onclick="viewProfileFromConv('${c.user.id}')">පැතිකඩ බලන්න</button>
-          <button onclick="viewProfilePhotoFromConv('${escapeHtml(c.user.photoURL)}')">පැතිකඩ ඡායාරූපය බලන්න</button>
-          <button class="danger" onclick="deleteChat('${c.user.id}')">චැට් එක ඉවත් කරන්න</button>
-        </div>
-      </div>
-    `).join("");
-  }
-
-  // ---------------- conversation row 3-dot menu ----------------
-  function closeAllItemMenus() {
-    document.querySelectorAll(".item-dropdown").forEach(el => el.style.display = "none");
-  }
-
-  window.toggleConvMenu = function (event, id) {
-    event.stopPropagation();
-    const menu = document.getElementById("convMenu-" + id);
-    if (!menu) return;
-    const wasOpen = menu.style.display === "block";
-    closeAllItemMenus();
-    menu.style.display = wasOpen ? "none" : "block";
-  };
-
-  window.viewProfileFromConv = function (id) {
-    closeAllItemMenus();
-    location.href = "match.html?id=" + id;
-  };
-
-  window.viewProfilePhotoFromConv = function (photoURL) {
-    closeAllItemMenus();
-    if (!photoURL) { alert("ඡායාරූපයක් නැත"); return; }
-    openLightbox([photoURL], 0);
-  };
-
-  window.deleteChat = async function (id) {
-    closeAllItemMenus();
-    if (!confirm("මෙම චැට් එක ලැයිස්තුවෙන් ඉවත් කරන්නද?")) return;
-    try {
-      await deleteConversationWith(id);
-    } catch (err) {
-      alert(err.message || "ඉවත් කිරීම අසාර්ථකයි");
-    }
-  };
-
-  function startConversationsSubscription() {
-    convUnsub = subscribeToConversations(conversations => {
-      conversationsError = null;
-      latestConversations = conversations;
-      const unread = conversations.filter(c => c.lastSenderId !== me.id).length;
-      const badge = document.getElementById("unreadBadge");
-      if (unread > 0) { badge.textContent = unread; badge.style.display = "inline-block"; }
-      else { badge.style.display = "none"; }
-      if (panels.messages.classList.contains("active") && !activeChatUser) renderConversationList();
-    }, err => {
-      console.error("subscribeToConversations failed:", err);
-      conversationsError = err.message || 'පණිවිඩ පූරණය අසාර්ථකයි';
-      if (panels.messages.classList.contains("active") && !activeChatUser) renderConversationList();
-    });
-  }
-
-  function loadConversations() {
-    const list = document.getElementById("convList");
-    if (conversationsError || latestConversations) renderConversationList();
-    else list.innerHTML = `<div class="empty-state">පූරණය වෙමින්...</div>`;
-  }
-
-  // ---------------- chat: selection / reply / long-press state ----------------
-  let latestMessages = [];
-  let selectionMode = false;
-  let selectedMsgIds = new Set();
-  let replyingTo = null; // { id, text }
-  let longPressTimer = null;
-
-  function resetChatInteractionState() {
-    selectionMode = false;
-    selectedMsgIds = new Set();
-    replyingTo = null;
-    document.getElementById("replyPreviewBar").classList.remove("active");
-  }
-
-  window.openChatWith = function (id, name, photoURL) {
-    activeChatUser = { id, name, photoURL };
-    resetChatInteractionState();
-    document.getElementById("conversationsView").style.display = "none";
-    document.getElementById("chatView").style.display = "block";
-    document.getElementById("chatAvatar").src = photoURL || "";
-    document.getElementById("chatName").textContent = name;
-    showTab("messages");
-
-    if (msgUnsub) msgUnsub();
-    const box = document.getElementById("chatMessages");
-    box.innerHTML = `<div class="empty-state">පූරණය වෙමින්...</div>`;
-    msgUnsub = subscribeToMessages(id, messages => {
-      latestMessages = messages;
-      renderChatMessages();
-    }, err => {
-      box.innerHTML = `<div class="error-box">${escapeHtml(err.message || 'පණිවිඩ පූරණය අසාර්ථකයි')}</div>`;
-    });
-  };
-
-  function renderChatMessages() {
-    const box = document.getElementById("chatMessages");
-    box.innerHTML = latestMessages.map(m => {
-      const mine = m.fromUid === me.id;
-      const isSelected = selectedMsgIds.has(m.id);
-      const quote = m.replyTo ? `<span class="msg-reply-quote">${escapeHtml(m.replyTo.text)}</span>` : "";
-      return `
-        <div class="msg-row ${mine ? 'me' : 'them'} ${selectionMode ? 'selectable' : ''}">
-          ${selectionMode ? `<input type="checkbox" class="msg-checkbox" style="display:inline-block;" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation(); toggleMsgSelect('${m.id}')">` : ""}
-          <div class="msg-bubble ${mine ? 'me' : 'them'} ${isSelected ? 'selected' : ''}"
-               onclick="handleBubbleClick('${m.id}')"
-               onpointerdown="startLongPress(event, '${m.id}')"
-               onpointerup="cancelLongPress()"
-               onpointerleave="cancelLongPress()"
-               oncontextmenu="event.preventDefault(); openMsgContextMenu(event, '${m.id}');">${quote}${escapeHtml(m.text)}</div>
-        </div>
-      `;
-    }).join("");
-    box.scrollTop = box.scrollHeight;
-    updateSelectBar();
-  }
-
-  function updateSelectBar() {
-    const bar = document.getElementById("chatSelectBar");
-    if (selectionMode) {
-      bar.classList.add("active");
-      document.getElementById("selCount").textContent = selectedMsgIds.size + " ක් තෝරාගෙන ඇත";
-    } else {
-      bar.classList.remove("active");
-    }
-  }
-
-  window.handleBubbleClick = function (id) {
-    if (selectionMode) toggleMsgSelect(id);
-  };
-
-  window.toggleMsgSelect = function (id) {
-    if (selectedMsgIds.has(id)) selectedMsgIds.delete(id);
-    else selectedMsgIds.add(id);
-    if (selectedMsgIds.size === 0) selectionMode = false;
-    renderChatMessages();
-  };
-
-  window.startLongPress = function (event, id) {
-    const x = event.clientX, y = event.clientY;
-    cancelLongPress();
-    longPressTimer = setTimeout(() => openMsgContextMenu({ clientX: x, clientY: y }, id), 500);
-  };
-  window.cancelLongPress = function () {
-    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
-  };
-
-  function closeMsgContextMenu() {
-    const el = document.getElementById("msgContextMenu");
-    if (el) el.remove();
-  }
-
-  window.openMsgContextMenu = function (event, id) {
-    closeMsgContextMenu();
-    closeAllItemMenus();
-    const msg = latestMessages.find(m => m.id === id);
-    if (!msg) return;
-    const menu = document.createElement("div");
-    menu.className = "msg-context-menu";
-    menu.id = "msgContextMenu";
-    const x = Math.min(event.clientX, window.innerWidth - 180);
-    const y = Math.min(event.clientY, window.innerHeight - 190);
-    menu.style.left = x + "px";
-    menu.style.top = y + "px";
-    menu.innerHTML = `
-      <button onclick="startReply('${id}')">↩ පිළිතුරු දෙන්න</button>
-      <button onclick="copyMsgText('${id}')">📋 පිටපත් කරන්න</button>
-      <button onclick="enterSelectionMode('${id}')">☑ සලකුණු කරන්න</button>
-      <button class="danger" onclick="deleteSingleMessage('${id}')">🗑 මකන්න</button>
-    `;
-    document.body.appendChild(menu);
-    setTimeout(() => document.addEventListener("click", closeMsgContextMenu, { once: true }), 0);
-  };
-
-  window.startReply = function (id) {
-    const msg = latestMessages.find(m => m.id === id);
-    closeMsgContextMenu();
-    if (!msg) return;
-    replyingTo = { id, text: msg.text };
-    document.getElementById("replyPreviewText").textContent = msg.text;
-    document.getElementById("replyPreviewBar").classList.add("active");
-    document.getElementById("chatInput").focus();
-  };
-
-  document.getElementById("replyPreviewClose").addEventListener("click", () => {
-    replyingTo = null;
-    document.getElementById("replyPreviewBar").classList.remove("active");
-  });
-
-  function fallbackCopyText(text) {
-    const ta = document.createElement("textarea");
-    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
-    document.body.appendChild(ta); ta.select();
-    try { document.execCommand("copy"); } catch (e) { /* ignore */ }
-    document.body.removeChild(ta);
-  }
-
-  window.copyMsgText = function (id) {
-    const msg = latestMessages.find(m => m.id === id);
-    closeMsgContextMenu();
-    if (!msg) return;
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(msg.text).catch(() => fallbackCopyText(msg.text));
-    } else {
-      fallbackCopyText(msg.text);
-    }
-  };
-
-  window.enterSelectionMode = function (id) {
-    closeMsgContextMenu();
-    selectionMode = true;
-    selectedMsgIds = new Set([id]);
-    renderChatMessages();
-  };
-
-  window.deleteSingleMessage = async function (id) {
-    closeMsgContextMenu();
-    if (!confirm("මෙම පණිවිඩය මකන්නද?")) return;
-    try {
-      await deleteMessages([id]);
-    } catch (err) {
-      alert(err.message || "මකීම අසාර්ථකයි");
-    }
-  };
-
-  document.getElementById("selCancelBtn").addEventListener("click", () => {
-    selectionMode = false;
-    selectedMsgIds = new Set();
-    renderChatMessages();
-  });
-
-  document.getElementById("selDeleteBtn").addEventListener("click", async () => {
-    if (selectedMsgIds.size === 0) return;
-    if (!confirm(selectedMsgIds.size + " පණිවිඩ මකන්නද?")) return;
-    const ids = Array.from(selectedMsgIds);
-    try {
-      await deleteMessages(ids);
-      selectionMode = false;
-      selectedMsgIds = new Set();
-      renderChatMessages();
-    } catch (err) {
-      alert(err.message || "මකීම අසාර්ථකයි");
-    }
-  });
-
-  document.getElementById("chatHeaderLink").addEventListener("click", () => {
-    if (activeChatUser) location.href = "match.html?id=" + activeChatUser.id;
-  });
-
-  document.getElementById("chatBackBtn").addEventListener("click", () => {
-    if (msgUnsub) { msgUnsub(); msgUnsub = null; }
-    activeChatUser = null;
-    resetChatInteractionState();
-    document.getElementById("chatView").style.display = "none";
-    document.getElementById("conversationsView").style.display = "block";
-    renderConversationList();
-  });
-
-  document.getElementById("chatForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    if (!activeChatUser) return;
-    const input = document.getElementById("chatInput");
-    const text = input.value.trim();
-    if (!text) return;
-    input.value = "";
-    const replyPayload = replyingTo ? { id: replyingTo.id, text: replyingTo.text } : null;
-    try {
-      await apiCall("/api/messages/" + activeChatUser.id, {
-        method: "POST",
-        body: JSON.stringify({ text, replyTo: replyPayload })
+// Called the moment a profile becomes "complete" (has nakshatraId +
+// rashiId) — at registration, or later via Settings for accounts that
+// started incomplete (e.g. Google sign-in). Notifies every existing
+// opposite-gender, non-disabled user who is a 75%+ match, so people
+// don't have to open their own feed to find out a new match joined.
+async function notifyMatchesForNewProfile(uid) {
+  try {
+    const me = await getUserDoc(uid);
+    if (!me.nakshatraId || !me.rashiId) return;
+    const snap = await db.collection("users").get();
+    const batch = db.batch();
+    let count = 0;
+    snap.forEach(doc => {
+      if (doc.id === uid) return;
+      const other = { id: doc.id, ...doc.data() };
+      if (other.disabled || !isApproved(other)) return;
+      if (me.gender && other.gender && other.gender === me.gender) return;
+      if (!other.nakshatraId || !other.rashiId) return;
+      const { boy, girl } = orderByGender(me, other);
+      const result = calculatePorondam(
+        { nakshatraId: boy.nakshatraId, rashiId: boy.rashiId },
+        { nakshatraId: girl.nakshatraId, rashiId: girl.rashiId }
+      );
+      if (result.percentage < 75) return;
+      const notifRef = db.collection("notifications").doc();
+      batch.set(notifRef, {
+        userId: other.id,
+        type: "match",
+        actorUid: uid,
+        subjectUid: uid,
+        subjectName: me.name || "",
+        subjectPhoto: me.photoURL || "",
+        text: `${result.percentage}% ගැලපීමක් සමඟ අලුත් සාමාජිකයෙක්!`,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        read: false
       });
-      replyingTo = null;
-      document.getElementById("replyPreviewBar").classList.remove("active");
-    } catch (err) {
-      input.value = text;
-      alert(err.message);
-    }
-  });
-
-  // ---------------- photo lightbox ----------------
-  let lightboxPhotos = [];
-  let lightboxIndex = 0;
-
-  window.openLightbox = function (photos, index) {
-    lightboxPhotos = photos;
-    lightboxIndex = index;
-    document.getElementById("lightboxImg").src = lightboxPhotos[lightboxIndex];
-    document.getElementById("lightbox").style.display = "flex";
-  };
-  window.closeLightbox = function () {
-    document.getElementById("lightbox").style.display = "none";
-  };
-  window.lightboxNav = function (delta) {
-    lightboxIndex = (lightboxIndex + delta + lightboxPhotos.length) % lightboxPhotos.length;
-    document.getElementById("lightboxImg").src = lightboxPhotos[lightboxIndex];
-  };
-  document.addEventListener("keydown", (e) => {
-    if (document.getElementById("lightbox").style.display !== "flex") return;
-    if (e.key === "Escape") closeLightbox();
-    if (e.key === "ArrowLeft") lightboxNav(-1);
-    if (e.key === "ArrowRight") lightboxNav(1);
-  });
-
-  // ---------------- settings (profile) ----------------
-  const MAX_PHOTOS = 7;
-  let currentPhotos = [];
-  let photoLongPressTimer = null;
-
-  function renderCoverPhoto() {
-    const el = document.getElementById("coverPhotoPreview");
-    if (currentPhotos[0]) {
-      el.innerHTML = `<img src="${escapeHtml(currentPhotos[0])}" alt="">`;
-    } else {
-      el.innerHTML = `<div class="photo-slot-empty" style="width:100%;height:100%;">ඡායාරූපයක් නැත</div>`;
-    }
-  }
-
-  function renderPhotoGallery() {
-    const el = document.getElementById("photoGallery");
-    const gallery = currentPhotos.slice(1);
-    document.getElementById("galleryMaxLabel").textContent = MAX_PHOTOS;
-    if (gallery.length === 0) {
-      el.innerHTML = `<div class="photo-slot photo-slot-empty">ගැලරි ඡායාරූප නැත</div>`;
-      return;
-    }
-    el.innerHTML = gallery.map((url, gi) => {
-      const i = gi + 1; // real index in currentPhotos
-      return `
-      <div class="photo-slot">
-        <img src="${escapeHtml(url)}" alt=""
-          onclick="openLightbox(currentPhotos, ${i})"
-          onpointerdown="startPhotoLongPress(event, ${i})"
-          onpointerup="cancelPhotoLongPress()"
-          onpointerleave="cancelPhotoLongPress()"
-          oncontextmenu="return false;">
-      </div>`;
-    }).join("");
-  }
-
-  window.startPhotoLongPress = function (event, i) {
-    const x = event.clientX, y = event.clientY;
-    cancelPhotoLongPress();
-    photoLongPressTimer = setTimeout(() => openPhotoContextMenu({ clientX: x, clientY: y }, i), 500);
-  };
-  window.cancelPhotoLongPress = function () {
-    if (photoLongPressTimer) { clearTimeout(photoLongPressTimer); photoLongPressTimer = null; }
-  };
-
-  function closePhotoContextMenu() {
-    const el = document.getElementById("photoContextMenu");
-    if (el) el.remove();
-  }
-
-  window.openPhotoContextMenu = function (event, i) {
-    closePhotoContextMenu();
-    const menu = document.createElement("div");
-    menu.className = "msg-context-menu";
-    menu.id = "photoContextMenu";
-    const x = Math.min(event.clientX, window.innerWidth - 180);
-    const y = Math.min(event.clientY, window.innerHeight - 100);
-    menu.style.left = x + "px";
-    menu.style.top = y + "px";
-    menu.innerHTML = `
-      <button onclick="makePrimaryPhoto(${i}); closePhotoContextMenu();">★ ප්‍රධාන ඡායාරූපය කරන්න</button>
-      <button class="danger" onclick="removePhoto(${i}); closePhotoContextMenu();">🗑 මකන්න</button>
-    `;
-    document.body.appendChild(menu);
-    setTimeout(() => document.addEventListener("click", closePhotoContextMenu, { once: true }), 0);
-  };
-
-  window.makePrimaryPhoto = function (i) {
-    const [chosen] = currentPhotos.splice(i, 1);
-    currentPhotos.unshift(chosen);
-    renderCoverPhoto();
-    renderPhotoGallery();
-  };
-
-  window.removePhoto = function (i) {
-    currentPhotos.splice(i, 1);
-    renderPhotoGallery();
-  };
-
-  document.getElementById("changeCoverBtn").addEventListener("click", () => {
-    document.getElementById("coverInput").click();
-  });
-
-  document.getElementById("coverInput").addEventListener("change", async (e) => {
-    const file = e.target.files && e.target.files[0];
-    e.target.value = "";
-    if (!file) return;
-    const preview = document.getElementById("coverPhotoPreview");
-    preview.innerHTML = `<div class="photo-slot-loading" style="width:100%;height:100%;">උඩුගත වෙමින්...</div>`;
-    try {
-      const url = await uploadPhotoToCloudinary(file);
-      if (currentPhotos.length) currentPhotos[0] = url;
-      else currentPhotos.unshift(url);
-    } catch (err) {
-      alert(err.message || "ඡායාරූපය උඩුගත කිරීම අසාර්ථකයි");
-    }
-    renderCoverPhoto();
-    renderPhotoGallery();
-  });
-
-  document.getElementById("updateGalleryBtn").addEventListener("click", () => {
-    document.getElementById("photoInput").click();
-  });
-
-  document.getElementById("photoInput").addEventListener("change", async (e) => {
-    const files = Array.from(e.target.files || []);
-    e.target.value = "";
-    if (!files.length) return;
-    const room = MAX_PHOTOS - currentPhotos.length;
-    if (room <= 0) { alert(`උපරිම ඡායාරූප ${MAX_PHOTOS} ක් විතරයි එකතු කළ හැක්කේ.`); return; }
-    const toUpload = files.slice(0, room);
-    const el = document.getElementById("photoGallery");
-    el.innerHTML += `<div class="photo-slot photo-slot-loading">උඩුගත වෙමින්...</div>`;
-    try {
-      for (const file of toUpload) {
-        const url = await uploadPhotoToCloudinary(file);
-        currentPhotos.push(url);
-      }
-    } catch (err) {
-      alert(err.message || "ඡායාරූපය උඩුගත කිරීම අසාර්ථකයි");
-    }
-    renderCoverPhoto();
-    renderPhotoGallery();
-  });
-
-  async function loadSettingsForm() {
-    document.getElementById("name").value = me.name || "";
-    document.getElementById("gender").value = me.gender || "";
-    document.getElementById("birthDate").value = me.birthDate || "";
-    document.getElementById("birthTime").value = me.birthTime || "";
-    populatePlaceSelect(document.getElementById("birthPlace"), me.birthPlace || "");
-    document.getElementById("bio").value = me.bio || "";
-    document.getElementById("education").value = me.education || "";
-    document.getElementById("profession").value = me.profession || "";
-    document.getElementById("facebook").value = me.facebook || "";
-    document.getElementById("whatsapp").value = me.whatsapp || "";
-    document.getElementById("religion").value = me.religion || "";
-    document.getElementById("ethnicity").value = me.ethnicity || "";
-    document.getElementById("height").value = me.height || "";
-    document.getElementById("lagnaRashi").value = me.lagnaRashiId || "";
-    document.getElementById("nakshatra").value = me.nakshatraId || "";
-    document.getElementById("rashi").value = me.rashiId || "";
-    refreshComputedPanchanga();
-
-    currentPhotos = Array.isArray(me.photos) && me.photos.length
-      ? [...me.photos]
-      : (me.photoURL ? [me.photoURL] : []);
-    renderCoverPhoto();
-    renderPhotoGallery();
-  }
-
-  // Nakshatra + Rashi are no longer picked manually — they're derived
-  // straight from birth date + birth time, and Lagna additionally
-  // from the selected birth place (see js/panchanga.js), so the
-  // member never has to know their own kendara details up front.
-  // Re-runs every time any of the three inputs changes, and fills the
-  // hidden lagnaRashi/nakshatra/rashi fields the rest of this form
-  // already reads.
-  function refreshComputedPanchanga() {
-    const box = document.getElementById("panchangaResult");
-    const birthDate = document.getElementById("birthDate").value;
-    const birthTime = document.getElementById("birthTime").value;
-    const result = calculateNakshatraRashi(birthDate, birthTime);
-    if (!result) {
-      document.getElementById("lagnaRashi").value = "";
-      document.getElementById("nakshatra").value = "";
-      document.getElementById("rashi").value = "";
-      box.className = "panchanga-result";
-      box.innerHTML = `<span class="hint">උපන් දිනය සහ වේලාව දෙකම දෙන්න</span>`;
-      return;
-    }
-    document.getElementById("nakshatra").value = result.nakshatraId;
-    document.getElementById("rashi").value = result.rashiId;
-    const nak = getNakshatra(result.nakshatraId);
-    const rashi = getRashi(result.rashiId);
-
-    const placeSelect = document.getElementById("birthPlace");
-    const placeOpt = placeSelect.selectedOptions[0];
-    const lagnaResult = (placeOpt && placeOpt.dataset.lat)
-      ? calculateLagna(birthDate, birthTime, placeOpt.dataset.lat, placeOpt.dataset.lng)
-      : null;
-    document.getElementById("lagnaRashi").value = lagnaResult ? lagnaResult.lagnaRashiId : "";
-    const lagnaRashi = lagnaResult ? getRashi(lagnaResult.lagnaRashiId) : null;
-    const lagnaValue = lagnaRashi
-      ? lagnaRashi.si
-      : `<span class="hint">ස්ථානය තෝරන්න</span>`;
-
-    box.className = "panchanga-cards";
-    box.innerHTML = `
-      <div class="panchanga-card pc-lagna">
-        <span class="pc-label">ලග්නය</span>
-        <span class="pc-value">${lagnaValue}</span>
-      </div>
-      <div class="panchanga-card pc-nakshatra">
-        <span class="pc-label">නැකත</span>
-        <span class="pc-value">${nak ? nak.si : '—'}</span>
-      </div>
-      <div class="panchanga-card pc-rashi">
-        <span class="pc-label">රාශිය</span>
-        <span class="pc-value">${rashi ? rashi.si : '—'}</span>
-      </div>
-    `;
-  }
-  document.getElementById("birthPlace").addEventListener("change", refreshComputedPanchanga);
-  document.getElementById("birthDate").addEventListener("change", refreshComputedPanchanga);
-  document.getElementById("birthTime").addEventListener("change", refreshComputedPanchanga);
-
-  document.getElementById("profileForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const errorBox = document.getElementById("errorBox");
-    const savedMsg = document.getElementById("savedMsg");
-    errorBox.style.display = "none";
-    savedMsg.style.display = "none";
-    if (!document.getElementById("nakshatra").value || !document.getElementById("rashi").value) {
-      showError(errorBox, "නැකත/රාශිය ගණනය කිරීමට උපන් දිනය සහ උපන් වේලාව දෙකම දෙන්න.");
-      return;
-    }
-    try {
-      await apiCall("/api/me", {
-        method: "PUT",
-        body: JSON.stringify({
-          name: document.getElementById("name").value,
-          gender: document.getElementById("gender").value,
-          birthDate: document.getElementById("birthDate").value,
-          birthTime: document.getElementById("birthTime").value,
-          birthPlace: document.getElementById("birthPlace").value,
-          lagnaRashiId: document.getElementById("lagnaRashi").value,
-          bio: document.getElementById("bio").value,
-          education: document.getElementById("education").value,
-          profession: document.getElementById("profession").value,
-          facebook: document.getElementById("facebook").value,
-          whatsapp: document.getElementById("whatsapp").value,
-          religion: document.getElementById("religion").value,
-          ethnicity: document.getElementById("ethnicity").value,
-          height: document.getElementById("height").value,
-          nakshatraId: document.getElementById("nakshatra").value,
-          rashiId: document.getElementById("rashi").value,
-          photos: currentPhotos
-        })
-      });
-      const meRes = await apiCall("/api/me");
-      me = meRes.user;
-      savedMsg.style.display = "block";
-    } catch (err) {
-      showError(errorBox, err.message);
-    }
-  });
-
-  async function doLogout() {
-    if (convUnsub) convUnsub();
-    if (msgUnsub) msgUnsub();
-    if (notifUnsub) notifUnsub();
-    if (pendingStatusUnsub) pendingStatusUnsub();
-    if (heartbeatTimer) clearInterval(heartbeatTimer);
-    await apiCall("/api/logout", { method: "POST" });
-    location.href = "login.html";
-  }
-  document.getElementById("settingsLogoutBtn").addEventListener("click", doLogout);
-  document.getElementById("pendingLogoutBtn").addEventListener("click", doLogout);
-
-  // ---------------- customer support chat (chats straight with admin,
-  // reusing the exact same messaging system as regular member chats) ----------------
-  // Remembers which restricted screen (pending / incomplete) support
-  // chat was opened from, so the back button returns to the right one.
-  let supportChatFrom = null;
-
-  function openSupportChat() {
-    const isPending = document.getElementById("pendingScreen").style.display !== "none";
-    const isIncomplete = document.getElementById("incompleteTopBar").style.display !== "none";
-    if (isPending || isIncomplete) {
-      // Pending/incomplete members can't use the rest of the dashboard
-      // yet, but they can still reach support — reveal just the chat
-      // panel (tabbar stays hidden so there's no way to wander into
-      // matches/feed before approval).
-      supportChatFrom = isPending ? "pending" : "incomplete";
-      document.getElementById("pendingScreen").style.display = "none";
-      document.getElementById("incompleteTopBar").style.display = "none";
-      document.getElementById("mainWrap").style.display = "block";
-      Object.values(panels).forEach(el => el.classList.remove("active"));
-      panels.messages.classList.add("active");
-      document.getElementById("pendingChatBackBar").style.display = "flex";
-    }
-    openChatWith(ADMIN_UID, "පාරිභෝගික සේවා", "img/logo2.png");
-  }
-  document.getElementById("supportFab").addEventListener("click", openSupportChat);
-  document.getElementById("pendingSupportBtn").addEventListener("click", openSupportChat);
-  document.getElementById("pendingChatBackToStatusBtn").addEventListener("click", () => {
-    if (msgUnsub) { msgUnsub(); msgUnsub = null; }
-    activeChatUser = null;
-    document.getElementById("pendingChatBackBar").style.display = "none";
-    document.getElementById("mainWrap").style.display = "none";
-    if (supportChatFrom === "incomplete") {
-      showIncompleteScreen();
-    } else {
-      document.getElementById("pendingScreen").style.display = "block";
-    }
-    supportChatFrom = null;
-  });
-
-  // ---------------- presence heartbeat (lets admin.html show who's
-  // currently online — see updateLastSeen() in api.js) ----------------
-  let heartbeatTimer = null;
-  function startHeartbeat() {
-    updateLastSeen();
-    heartbeatTimer = setInterval(updateLastSeen, 30000);
-  }
-
-  // ---------------- boot ----------------
-  let pendingStatusUnsub = null;
-
-  function showPendingScreen() {
-    document.getElementById("incompleteTopBar").style.display = "none";
-    document.getElementById("mainTabbar").style.display = "none";
-    document.getElementById("mainWrap").style.display = "none";
-    document.getElementById("supportFab").style.display = "none";
-    document.getElementById("completeProfileBanner").style.display = "none";
-    document.getElementById("pendingScreen").style.display = "block";
-  }
-
-  // Fresh signup (Google or regular) that hasn't submitted their
-  // profile for review yet. Locked to a Settings-only view — no
-  // tabbar, no floating support icon — with a small message-admin
-  // icon in the top corner instead (per the "only I can message them
-  // until verified, no popup icon" requirement) and a "submit for
-  // review" button on the profile form.
-  function showIncompleteScreen() {
-    document.getElementById("pendingScreen").style.display = "none";
-    document.getElementById("mainTabbar").style.display = "none";
-    document.getElementById("supportFab").style.display = "none";
-    document.getElementById("completeProfileBanner").style.display = "none";
-    document.getElementById("incompleteTopBar").style.display = "flex";
-    document.getElementById("mainWrap").style.display = "block";
-    Object.values(panels).forEach(el => el.classList.remove("active"));
-    panels.settings.classList.add("active");
-    document.getElementById("incompleteNotice").style.display = "block";
-    document.getElementById("submitForReviewBtn").style.display = "block";
-    document.getElementById("settingsAccountSection").style.display = "none";
-  }
-
-  // Watches my own doc while I'm incomplete/pending so any status
-  // change (submit from another tab, admin approval) updates this
-  // screen automatically with no manual refresh.
-  function watchMyStatus(wantTab, withId) {
-    if (pendingStatusUnsub) { pendingStatusUnsub(); pendingStatusUnsub = null; }
-    pendingStatusUnsub = db.collection("users").doc(me.id).onSnapshot(snap => {
-      const data = snap.data();
-      if (!data) return;
-      me = { id: me.id, ...data };
-      if (data.status === "pending") {
-        showPendingScreen();
-      } else if (data.status === "incomplete") {
-        showIncompleteScreen();
-      } else {
-        if (pendingStatusUnsub) { pendingStatusUnsub(); pendingStatusUnsub = null; }
-        showFullDashboard(wantTab, withId);
-      }
+      count++;
     });
-  }
+    if (count > 0) await batch.commit();
+  } catch (e) { console.warn("notifyMatchesForNewProfile failed:", e); }
+}
 
-  document.getElementById("submitForReviewBtn").addEventListener("click", async () => {
-    const errorBox = document.getElementById("errorBox");
-    errorBox.style.display = "none";
-    if (!document.getElementById("nakshatra").value || !document.getElementById("rashi").value) {
-      showError(errorBox, "නැකත/රාශිය ගණනය කිරීමට උපන් දිනය සහ උපන් වේලාව දෙකම දෙන්න.");
-      return;
-    }
-    const btn = document.getElementById("submitForReviewBtn");
-    btn.disabled = true;
-    try {
-      await apiCall("/api/me", {
-        method: "PUT",
-        body: JSON.stringify({
-          name: document.getElementById("name").value,
-          gender: document.getElementById("gender").value,
-          birthDate: document.getElementById("birthDate").value,
-          birthTime: document.getElementById("birthTime").value,
-          birthPlace: document.getElementById("birthPlace").value,
-          lagnaRashiId: document.getElementById("lagnaRashi").value,
-          bio: document.getElementById("bio").value,
-          education: document.getElementById("education").value,
-          profession: document.getElementById("profession").value,
-          facebook: document.getElementById("facebook").value,
-          whatsapp: document.getElementById("whatsapp").value,
-          religion: document.getElementById("religion").value,
-          ethnicity: document.getElementById("ethnicity").value,
-          height: document.getElementById("height").value,
-          nakshatraId: document.getElementById("nakshatra").value,
-          rashiId: document.getElementById("rashi").value,
-          photos: currentPhotos,
-          submit: true
-        })
+async function apiCall(url, options = {}) {
+  const method = options.method || "GET";
+  const body = options.body ? JSON.parse(options.body) : {};
+
+  try {
+    // POST /api/register — just creates the account (name + username
+    // + password) with status "incomplete". No profile details or
+    // photo are collected here anymore — the person is sent straight
+    // to Settings to fill those in and submit for review (mirrors
+    // completeGoogleSignup above). It only becomes a "pending" admin
+    // request once they hit submit from Settings.
+    if (url === "/api/register" && method === "POST") {
+      const email = usernameToEmail(body.username);
+      const existing = await db.collection("users")
+        .where("usernameLower", "==", body.username.trim().toLowerCase()).limit(1).get();
+      if (!existing.empty) throw new Error("මෙම පරිශීලක නාමය දැනටමත් භාවිතයේ ඇත");
+
+      const cred = await auth.createUserWithEmailAndPassword(email, body.password);
+      await db.collection("users").doc(cred.user.uid).set({
+        name: body.name || "",
+        usernameLower: body.username.trim().toLowerCase(),
+        gender: "",
+        birthDate: "",
+        birthTime: "",
+        birthPlace: "",
+        nakshatraId: null,
+        rashiId: null,
+        lagnaRashiId: null,
+        bio: "",
+        education: "",
+        profession: "",
+        facebook: "",
+        whatsapp: "",
+        photoURL: "",
+        photos: [],
+        status: "incomplete",
+        disabled: false,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
-      const meRes = await apiCall("/api/me");
-      me = meRes.user;
-      showPendingScreen();
-      watchMyStatus();
-    } catch (err) {
-      showError(errorBox, err.message);
-      btn.disabled = false;
-    }
-  });
-
-  document.getElementById("incompleteMsgBtn").addEventListener("click", openSupportChat);
-  document.getElementById("incompleteLogoutBtn").addEventListener("click", doLogout);
-
-  function showFullDashboard(wantTab, withId) {
-    document.getElementById("mainTabbar").style.display = "flex";
-    document.getElementById("mainWrap").style.display = "block";
-    document.getElementById("supportFab").style.display = "flex";
-    document.getElementById("pendingScreen").style.display = "none";
-    document.getElementById("incompleteTopBar").style.display = "none";
-    // In case this account just got approved straight out of
-    // "incomplete" (skipping the submit-for-review UI reset), undo
-    // the incomplete-only Settings tweaks so it looks like a normal
-    // Settings page from here on.
-    document.getElementById("incompleteNotice").style.display = "none";
-    document.getElementById("submitForReviewBtn").style.display = "none";
-    document.getElementById("settingsAccountSection").style.display = "";
-
-    startConversationsSubscription();
-    startNotificationsSubscription();
-    startHeartbeat();
-    if (me.id === ADMIN_UID) document.getElementById("adminLink").style.display = "inline";
-    if (!me.nakshatraId || !me.rashiId) {
-      document.getElementById("completeProfileBanner").style.display = "flex";
+      return { ok: true };
     }
 
-    (async () => {
-      if (withId) {
-        try {
-          const { user } = await apiCall("/api/users/" + withId);
-          openChatWith(user.id, user.name, user.photoURL);
-          history.replaceState({}, "", location.pathname);
-        } catch {
-          showTab("home");
+    // POST /api/login
+    if (url === "/api/login" && method === "POST") {
+      const email = usernameToEmail(body.username);
+      try {
+        await auth.signInWithEmailAndPassword(email, body.password);
+      } catch (err) {
+        throw new Error("පරිශීලක නාමය හෝ මුරපදය වැරදිය");
+      }
+      return { ok: true };
+    }
+
+    // POST /api/logout
+    if (url === "/api/logout" && method === "POST") {
+      await auth.signOut();
+      return { ok: true };
+    }
+
+    // GET /api/me
+    if (url === "/api/me" && method === "GET") {
+      const user = await waitForAuthReady();
+      if (!user) throw new Error("ලොග් වී නැත");
+      const profile = await getUserDoc(user.uid);
+      return { user: profile };
+    }
+
+    // PUT /api/me
+    if (url === "/api/me" && method === "PUT") {
+      const uid = await requireUid();
+      const beforeDoc = await getUserDoc(uid).catch(() => null);
+      const update = {
+        name: body.name,
+        gender: body.gender,
+        birthDate: body.birthDate || "",
+        birthTime: body.birthTime || "",
+        birthPlace: body.birthPlace || "",
+        bio: body.bio || "",
+        education: body.education || "",
+        profession: body.profession || "",
+        facebook: body.facebook || "",
+        whatsapp: body.whatsapp || "",
+        religion: body.religion || "",
+        ethnicity: body.ethnicity || "",
+        height: body.height || "",
+        nakshatraId: Number(body.nakshatraId),
+        rashiId: Number(body.rashiId),
+        lagnaRashiId: body.lagnaRashiId ? Number(body.lagnaRashiId) : null
+      };
+      if (body.photoURL) update.photoURL = body.photoURL;
+      if (Array.isArray(body.photos)) {
+        update.photos = body.photos;
+        // Keep the legacy single photoURL (used in cards/rings/avatars
+        // across the app) pointed at the first gallery photo so older
+        // UI that only knows about photoURL still shows a picture.
+        if (!body.photoURL) update.photoURL = body.photos[0] || "";
+      }
+
+      // submit: true — the person hit "සමාලෝචනය සඳහා යවන්න" (send for
+      // review) in Settings. Only meaningful for accounts still stuck
+      // at status "incomplete" (fresh signups that haven't been sent
+      // to the admin queue yet). Validate the profile is actually
+      // usable before it ever reaches the admin, then flip it to
+      // "pending" so it shows up in GET /api/admin/requests.
+      if (body.submit && beforeDoc && beforeDoc.status === "incomplete") {
+        const finalPhotos = update.photos || (beforeDoc.photos || []);
+        const hasPhoto = (update.photoURL || beforeDoc.photoURL || finalPhotos[0]);
+        const missing = [];
+        if (!update.name) missing.push("නම");
+        if (!update.gender) missing.push("ස්ත්‍රී/පුරුෂ භාවය");
+        if (!update.nakshatraId) missing.push("නැකත");
+        if (!update.rashiId) missing.push("රාශිය");
+        if (!hasPhoto) missing.push("ඡායාරූපය");
+        if (missing.length) {
+          throw new Error("සමාලෝචනය සඳහා යැවීමට පෙර මේවා සම්පූර්ණ කරන්න: " + missing.join(", "));
         }
-      } else {
-        showTab(wantTab && panels[wantTab] ? wantTab : "home");
+        update.status = "pending";
       }
-    })();
+
+      await db.collection("users").doc(uid).update(update);
+
+      const wasComplete = !!(beforeDoc && beforeDoc.nakshatraId && beforeDoc.rashiId);
+      const isComplete = !!(update.nakshatraId && update.rashiId);
+      if (!wasComplete && isComplete && beforeDoc && isApproved(beforeDoc)) {
+        await notifyMatchesForNewProfile(uid);
+      }
+      return { ok: true };
+    }
+
+    // GET /api/reference
+    if (url === "/api/reference" && method === "GET") {
+      return getReferenceLists();
+    }
+
+    // GET /api/users/:id  (lightweight public lookup, used when
+    // opening a fresh conversation from a link before any message
+    // history/match calc exists)
+    const userDetailPrefix = "/api/users/";
+    if (url.startsWith(userDetailPrefix) && method === "GET") {
+      const otherId = url.slice(userDetailPrefix.length);
+      const other = await getUserDoc(otherId);
+      return { user: toPublicUser(other) };
+    }
+
+    // GET /api/matches
+    if (url === "/api/matches" && method === "GET") {
+      const uid = await requireUid();
+      const me = await getUserDoc(uid);
+      const snap = await db.collection("users").get();
+      const matches = [];
+      snap.forEach(doc => {
+        if (doc.id === uid) return;
+        const other = { id: doc.id, ...doc.data() };
+        if (other.disabled || !isApproved(other)) return;
+        if (me.gender && other.gender && other.gender === me.gender) return;
+        if (!other.nakshatraId || !other.rashiId) return;
+        const { boy, girl } = orderByGender(me, other);
+        const result = calculatePorondam(
+          { nakshatraId: boy.nakshatraId, rashiId: boy.rashiId },
+          { nakshatraId: girl.nakshatraId, rashiId: girl.rashiId }
+        );
+        matches.push({
+          user: toPublicUser(other),
+          percentage: result.percentage,
+          totalScore: result.totalScore,
+          totalMax: result.totalMax,
+          doshas: result.doshas
+        });
+      });
+      matches.sort((a, b) => b.percentage - a.percentage);
+      return { matches };
+    }
+
+    // GET /api/matches/:id
+    const matchDetailPrefix = "/api/matches/";
+    if (url.startsWith(matchDetailPrefix) && method === "GET") {
+      const uid = await requireUid();
+      const otherId = url.slice(matchDetailPrefix.length);
+      const me = await getUserDoc(uid);
+      const other = await getUserDoc(otherId);
+      const { boy, girl } = orderByGender(me, other);
+      const result = calculatePorondam(
+        { nakshatraId: boy.nakshatraId, rashiId: boy.rashiId },
+        { nakshatraId: girl.nakshatraId, rashiId: girl.rashiId }
+      );
+      return {
+        user: toPublicUser(other),
+        percentage: result.percentage,
+        totalScore: result.totalScore,
+        totalMax: result.totalMax,
+        doshas: result.doshas,
+        factors: result.factors.map(f => ({ nameSi: f.nameSi, score: f.score, max: f.max }))
+      };
+    }
+
+    // GET /api/feed — people I'm strongly (>=50%) matched with, who
+    // also have a profile photo, for the Home tab scroll feed.
+    if (url === "/api/feed" && method === "GET") {
+      const uid = await requireUid();
+      const me = await getUserDoc(uid);
+      const snap = await db.collection("users").get();
+      const feed = [];
+      snap.forEach(doc => {
+        if (doc.id === uid) return;
+        const other = { id: doc.id, ...doc.data() };
+        if (other.disabled || !isApproved(other)) return;
+        if (me.gender && other.gender && other.gender === me.gender) return;
+        if (!other.nakshatraId || !other.rashiId || !other.photoURL) return;
+        const { boy, girl } = orderByGender(me, other);
+        const result = calculatePorondam(
+          { nakshatraId: boy.nakshatraId, rashiId: boy.rashiId },
+          { nakshatraId: girl.nakshatraId, rashiId: girl.rashiId }
+        );
+        if (result.percentage < 50) return;
+        feed.push({
+          user: toPublicUser(other),
+          percentage: result.percentage,
+          totalScore: result.totalScore,
+          totalMax: result.totalMax
+        });
+      });
+      feed.sort((a, b) => b.percentage - a.percentage);
+
+      // Notify me about matches I haven't seen before (best-effort —
+      // never let a notification hiccup break the feed response).
+      try {
+        const seen = new Set(me.seenMatchIds || []);
+        const freshMatches = feed.filter(f => !seen.has(f.user.id));
+        if (freshMatches.length > 0) {
+          const batch = db.batch();
+          freshMatches.forEach(f => {
+            const notifRef = db.collection("notifications").doc();
+            batch.set(notifRef, {
+              userId: uid,
+              type: "match",
+              actorUid: uid,
+              subjectUid: f.user.id,
+              subjectName: f.user.name,
+              subjectPhoto: f.user.photoURL || "",
+              text: `${f.percentage}% ගැලපීමක්!`,
+              createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+              read: false
+            });
+          });
+          batch.update(db.collection("users").doc(uid), {
+            seenMatchIds: firebase.firestore.FieldValue.arrayUnion(...freshMatches.map(f => f.user.id))
+          });
+          await batch.commit();
+        }
+      } catch (e) { console.warn("match notification failed:", e); }
+
+      return { feed };
+    }
+
+    // GET /api/conversations — one-shot list (subscribeToConversations
+    // below is the realtime version used by the Messages tab)
+    if (url === "/api/conversations" && method === "GET") {
+      const uid = await requireUid();
+      const snap = await db.collection("conversations")
+        .where("participants", "array-contains", uid)
+        .orderBy("lastMessageAt", "desc")
+        .get();
+      const conversations = [];
+      for (const doc of snap.docs) {
+        const data = doc.data();
+        const otherId = data.participants.find(p => p !== uid);
+        let otherUser;
+        try { otherUser = toPublicUser(await getUserDoc(otherId)); } catch { continue; }
+        conversations.push({
+          id: doc.id,
+          user: otherUser,
+          lastMessage: data.lastMessage || "",
+          lastMessageAt: data.lastMessageAt,
+          lastSenderId: data.lastSenderId,
+          unread: isConversationUnread(data, uid)
+        });
+      }
+      return { conversations };
+    }
+
+    // GET /api/messages/:id — one-shot history with user :id
+    const messagesPrefix = "/api/messages/";
+    if (url.startsWith(messagesPrefix) && method === "GET") {
+      const uid = await requireUid();
+      const otherId = url.slice(messagesPrefix.length);
+      const convId = conversationIdFor(uid, otherId);
+      const snap = await db.collection("messages")
+        .where("conversationId", "==", convId)
+        .where("participants", "array-contains", uid)
+        .orderBy("createdAt", "asc")
+        .get();
+      const messages = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      return { messages };
+    }
+
+    // POST /api/messages/:id — send a message to user :id
+    if (url.startsWith(messagesPrefix) && method === "POST") {
+      const uid = await requireUid();
+      const otherId = url.slice(messagesPrefix.length);
+      const text = (body.text || "").trim();
+      if (!text) throw new Error("පණිවිඩය හිස්ය");
+      if (otherId === uid) throw new Error("ඔබටම පණිවිඩයක් යැවිය නොහැක");
+
+      const convId = conversationIdFor(uid, otherId);
+      const now = firebase.firestore.FieldValue.serverTimestamp();
+
+      const messageDoc = {
+        conversationId: convId,
+        fromUid: uid,
+        toUid: otherId,
+        participants: [uid, otherId],
+        text,
+        createdAt: now
+      };
+      // Optional "reply to" reference — just a lightweight snapshot of
+      // the quoted message's id/text at send time (not a live link),
+      // so the quote still renders even if the original is edited or
+      // later deleted.
+      if (body.replyTo && body.replyTo.id && body.replyTo.text) {
+        messageDoc.replyTo = { id: body.replyTo.id, text: String(body.replyTo.text).slice(0, 200) };
+      }
+
+      await db.collection("messages").add(messageDoc);
+
+      await db.collection("conversations").doc(convId).set({
+        participants: [uid, otherId],
+        lastMessage: text,
+        lastMessageAt: now,
+        lastSenderId: uid
+      }, { merge: true });
+
+      // Best-effort notification for the recipient. actorUid must equal
+      // the auth'd caller (that's what the security rule checks) —
+      // subjectUid/Name/Photo describe the OTHER party for display and
+      // for opening the right chat when the notification is tapped.
+      try {
+        const senderDoc = await getUserDoc(uid);
+        await db.collection("notifications").add({
+          userId: otherId,
+          type: "message",
+          actorUid: uid,
+          subjectUid: uid,
+          subjectName: senderDoc.name || "",
+          subjectPhoto: senderDoc.photoURL || "",
+          text: text.length > 60 ? text.slice(0, 60) + "…" : text,
+          createdAt: now,
+          read: false
+        });
+      } catch (e) { console.warn("message notification failed:", e); }
+
+      return { ok: true };
+    }
+
+    // ---- admin endpoints (gated on ADMIN_UID from firebase-config.js)
+    // NOTE: this client-side check only hides/blocks the UI politely.
+    // The real enforcement is in firestore.rules, which must have the
+    // same UID hardcoded for the update/delete rules on /users to
+    // actually deny anyone else.
+
+    // GET /api/admin/users — approved/active members for the "site
+    // එකේ ඉන්න අය" admin table. Pending requests are a separate
+    // endpoint (GET /api/admin/requests) so the two lists never mix.
+    if (url === "/api/admin/users" && method === "GET") {
+      const uid = await requireUid();
+      if (uid !== ADMIN_UID) throw new Error("Access denied");
+      const snap = await db.collection("users").get();
+      const users = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(u => isApproved(u))
+        .map(u => ({
+          id: u.id,
+          name: u.name || "",
+          usernameLower: u.usernameLower || "",
+          gender: u.gender || "",
+          birthDate: u.birthDate || "",
+          birthTime: u.birthTime || "",
+          birthPlace: u.birthPlace || "",
+          nakshatraId: u.nakshatraId || null,
+          rashiId: u.rashiId || null,
+          lagnaRashiId: u.lagnaRashiId || null,
+          height: u.height || "",
+          religion: u.religion || "",
+          ethnicity: u.ethnicity || "",
+          education: u.education || "",
+          profession: u.profession || "",
+          bio: u.bio || "",
+          facebook: u.facebook || "",
+          whatsapp: u.whatsapp || "",
+          photoURL: u.photoURL || "",
+          photos: Array.isArray(u.photos) ? u.photos : [],
+          disabled: !!u.disabled,
+          createdAt: u.createdAt || null,
+          lastSeen: u.lastSeen || null
+        }));
+      users.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+      return { users };
+    }
+
+    // GET /api/admin/requests — accounts awaiting approval, oldest
+    // first (first come, first reviewed). Returns the FULL submitted
+    // profile (not just a summary) since the admin panel opens a
+    // detail card with everything the person filled in before
+    // approving/rejecting.
+    if (url === "/api/admin/requests" && method === "GET") {
+      const uid = await requireUid();
+      if (uid !== ADMIN_UID) throw new Error("Access denied");
+      const snap = await db.collection("users").where("status", "==", "pending").get();
+      const requests = snap.docs.map(d => {
+        const u = d.data();
+        return {
+          id: d.id,
+          name: u.name || "",
+          usernameLower: u.usernameLower || "",
+          gender: u.gender || "",
+          birthDate: u.birthDate || "",
+          birthTime: u.birthTime || "",
+          birthPlace: u.birthPlace || "",
+          nakshatraId: u.nakshatraId || null,
+          rashiId: u.rashiId || null,
+          lagnaRashiId: u.lagnaRashiId || null,
+          height: u.height || "",
+          religion: u.religion || "",
+          ethnicity: u.ethnicity || "",
+          education: u.education || "",
+          profession: u.profession || "",
+          bio: u.bio || "",
+          facebook: u.facebook || "",
+          whatsapp: u.whatsapp || "",
+          photoURL: u.photoURL || "",
+          photos: Array.isArray(u.photos) ? u.photos : [],
+          createdAt: u.createdAt || null
+        };
+      });
+      requests.sort((a, b) => (a.createdAt?.toMillis?.() || 0) - (b.createdAt?.toMillis?.() || 0));
+      return { requests };
+    }
+
+    // PUT /api/admin/requests/:id/approve — flips status to approved,
+    // notifies the new member, and (since they now have a complete
+    // porondam profile) notifies existing matching members too.
+    const approvePrefix = "/api/admin/requests/";
+    if (url.startsWith(approvePrefix) && url.endsWith("/approve") && method === "PUT") {
+      const uid = await requireUid();
+      if (uid !== ADMIN_UID) throw new Error("Access denied");
+      const targetId = url.slice(approvePrefix.length, -"/approve".length);
+      // The actual approval (this line) is what matters — the two
+      // notification steps below are a nice-to-have, so a permission
+      // hiccup on notification writes must never surface as an error
+      // once the member is already approved and live on the site.
+      await db.collection("users").doc(targetId).update({ status: "approved" });
+      try {
+        await db.collection("notifications").add({
+          userId: targetId,
+          type: "approved",
+          actorUid: uid,
+          subjectUid: uid,
+          subjectName: "Porondama",
+          subjectPhoto: "",
+          text: "ඔබගේ ලියාපදිංචිය අනුමත කරන ලදී! සයිට් එක සක්‍රීයයි — ඔබගේ සහකාරිය දැන් තෝරගන්න 💛",
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          read: false
+        });
+      } catch (e) { console.warn("approval notification failed:", e); }
+      await notifyMatchesForNewProfile(targetId);
+      return { ok: true };
+    }
+
+    // DELETE /api/admin/requests/:id — reject a pending request. Just
+    // removes the Firestore profile (same limitation as deleting an
+    // approved user — the Auth account itself needs the Admin SDK /
+    // Firebase Console to remove).
+    if (url.startsWith(approvePrefix) && method === "DELETE") {
+      const uid = await requireUid();
+      if (uid !== ADMIN_UID) throw new Error("Access denied");
+      const targetId = url.slice(approvePrefix.length);
+      await db.collection("users").doc(targetId).delete();
+      return { ok: true };
+    }
+
+    // PUT /api/admin/users/:id — toggle disabled (hides from matches/feed)
+    const adminUserPrefix = "/api/admin/users/";
+    if (url.startsWith(adminUserPrefix) && method === "PUT") {
+      const uid = await requireUid();
+      if (uid !== ADMIN_UID) throw new Error("Access denied");
+      const targetId = url.slice(adminUserPrefix.length);
+      await db.collection("users").doc(targetId).update({ disabled: !!body.disabled });
+      return { ok: true };
+    }
+
+    // DELETE /api/admin/users/:id — removes the Firestore profile only.
+    // The Firebase Auth account itself can't be deleted from client
+    // code (needs the Admin SDK / a Cloud Function); this just takes
+    // the profile out of Firestore so they stop appearing anywhere
+    // and can't log in to a working account.
+    if (url.startsWith(adminUserPrefix) && method === "DELETE") {
+      const uid = await requireUid();
+      if (uid !== ADMIN_UID) throw new Error("Access denied");
+      const targetId = url.slice(adminUserPrefix.length);
+      await db.collection("users").doc(targetId).delete();
+      return { ok: true };
+    }
+
+    throw new Error("Unknown endpoint: " + method + " " + url);
+  } catch (err) {
+    throw new Error(err.message || "Something went wrong");
   }
+}
 
-  (async () => {
-    try {
-      const meRes = await apiCall("/api/me");
-      me = meRes.user;
-    } catch {
-      location.href = "login.html";
-      return;
-    }
+// ---- realtime helpers (Messages tab) ------------------------------
+// These stream live updates via Firestore onSnapshot instead of
+// request/response, so they sit outside apiCall(). Each returns an
+// unsubscribe function — call it when the user leaves the tab/chat.
 
-    await loadSettingsForm();
+function subscribeToConversations(callback, onError) {
+  const uid = currentUid();
+  return db.collection("conversations")
+    .where("participants", "array-contains", uid)
+    .orderBy("lastMessageAt", "desc")
+    .onSnapshot(async snap => {
+      const conversations = [];
+      for (const doc of snap.docs) {
+        const data = doc.data();
+        const otherId = data.participants.find(p => p !== uid);
+        let otherUser;
+        try { otherUser = toPublicUser(await getUserDoc(otherId)); } catch { continue; }
+        conversations.push({
+          id: doc.id,
+          user: otherUser,
+          lastMessage: data.lastMessage || "",
+          lastMessageAt: data.lastMessageAt,
+          lastSenderId: data.lastSenderId,
+          unread: isConversationUnread(data, uid)
+        });
+      }
+      callback(conversations);
+    }, err => { if (onError) onError(err); });
+}
 
-    const params = new URLSearchParams(location.search);
-    const withId = params.get("with");
-    const wantTab = params.get("tab");
+function subscribeToMessages(otherUid, callback, onError) {
+  const uid = currentUid();
+  const convId = conversationIdFor(uid, otherUid);
+  return db.collection("messages")
+    .where("conversationId", "==", convId)
+    .where("participants", "array-contains", uid)
+    .orderBy("createdAt", "asc")
+    .onSnapshot(snap => {
+      const messages = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      callback(messages);
+    }, err => { if (onError) onError(err); });
+}
 
-    if (me.status === "incomplete") {
-      showIncompleteScreen();
-      watchMyStatus(wantTab, withId);
-      return;
-    }
+// Realtime notification bell feed — newest 30 for the current user.
+// A single equality filter (userId ==) + orderBy on a different field
+// (createdAt) does NOT need a composite index in Firestore, unlike the
+// messages/conversations queries above.
+function subscribeToNotifications(callback, onError) {
+  const uid = currentUid();
+  return db.collection("notifications")
+    .where("userId", "==", uid)
+    .orderBy("createdAt", "desc")
+    .limit(30)
+    .onSnapshot(snap => {
+      const notifications = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      callback(notifications);
+    }, err => { if (onError) onError(err); });
+}
 
-    if (me.status === "pending") {
-      showPendingScreen();
-      // Live-watch my own doc so the moment the admin approves me,
-      // this screen switches over to the real dashboard automatically
-      // (no manual refresh needed).
-      watchMyStatus(wantTab, withId);
-      return;
-    }
+async function markNotificationRead(notifId) {
+  try { await db.collection("notifications").doc(notifId).update({ read: true }); }
+  catch (e) { console.warn("markNotificationRead failed:", e); }
+}
 
-    showFullDashboard(wantTab, withId);
-  })();
-</script>
-<div id="lightbox" class="lightbox" style="display:none;" onclick="if(event.target===this) closeLightbox()">
-  <button type="button" class="lightbox-close" onclick="closeLightbox()">✕</button>
-  <button type="button" class="lightbox-nav lightbox-prev" onclick="lightboxNav(-1)">‹</button>
-  <img id="lightboxImg" src="" alt="">
-  <button type="button" class="lightbox-nav lightbox-next" onclick="lightboxNav(1)">›</button>
-</div>
-<script src="js/sw-register.js"></script>
-</body>
-</html>
+// Removes the conversation summary doc from the current user's
+// conversation list. Deliberately does NOT delete the underlying
+// message docs, so re-opening the chat (e.g. from the other person's
+// side, or a new message) will still show prior history. This is
+// allowed under the existing Firestore rules ("allow read, write" on
+// /conversations for participants).
+async function deleteConversationWith(otherUid) {
+  const uid = await requireUid();
+  const convId = conversationIdFor(uid, otherUid);
+  await db.collection("conversations").doc(convId).delete();
+}
+
+// Permanently deletes one or more message docs (for both participants).
+// REQUIRES a Firestore Security Rules update — the rules shown at the
+// top of this file only grant `read` and `create` on /messages/{msgId}.
+// Add this rule in Firebase Console -> Firestore Database -> Rules so
+// deleting messages is allowed:
+//
+//   match /messages/{msgId} {
+//     allow read: if request.auth != null &&
+//       request.auth.uid in resource.data.participants;
+//     allow create: if request.auth != null &&
+//       request.resource.data.fromUid == request.auth.uid &&
+//       request.auth.uid in request.resource.data.participants &&
+//       request.resource.data.toUid in request.resource.data.participants;
+//     allow delete: if request.auth != null &&
+//       request.auth.uid in resource.data.participants;
+//   }
+//
+// Until that rule is added, deleting a message will fail with a
+// "Missing or insufficient permissions" error.
+async function deleteMessages(msgIds) {
+  await requireUid();
+  const batch = db.batch();
+  msgIds.forEach(id => batch.delete(db.collection("messages").doc(id)));
+  await batch.commit();
+}
+
+async function markAllNotificationsRead(notifIds) {
+  if (!notifIds.length) return;
+  try {
+    const batch = db.batch();
+    notifIds.forEach(id => batch.update(db.collection("notifications").doc(id), { read: true }));
+    await batch.commit();
+  } catch (e) { console.warn("markAllNotificationsRead failed:", e); }
+}
