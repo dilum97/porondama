@@ -268,16 +268,13 @@
       <div class="settings-section" style="margin-bottom:0;" id="settingsAccountSection">
         <h3>ගිණුම</h3>
         <p class="hint">ඔබේ ගිණුමෙන් ඉවත් වන්න</p>
+        <button type="button" class="btn btn-support" id="settingsSupportBtn" style="width:100%; margin-bottom:10px;">🎧 Customer support</button>
         <button class="btn btn-secondary" id="settingsLogoutBtn" style="width:100%;">Logout</button>
       </div>
     </div>
   </div>
 
 </div>
-
-<button type="button" id="supportFab" class="support-fab" aria-label="පාරිභෝගික සේවා" title="පාරිභෝගික සේවා">
-  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5.5h16a1 1 0 0 1 1 1V17a1 1 0 0 1-1 1H8l-4 3.5V6.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
-</button>
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -1177,7 +1174,7 @@
     }
     openChatWith(ADMIN_UID, "පාරිභෝගික සේවා", "img/logo2.png");
   }
-  document.getElementById("supportFab").addEventListener("click", openSupportChat);
+  document.getElementById("settingsSupportBtn").addEventListener("click", openSupportChat);
   document.getElementById("pendingSupportBtn").addEventListener("click", openSupportChat);
   document.getElementById("pendingChatBackToStatusBtn").addEventListener("click", () => {
     if (msgUnsub) { msgUnsub(); msgUnsub = null; }
@@ -1208,7 +1205,6 @@
     document.getElementById("incompleteTopBar").style.display = "none";
     document.getElementById("mainTabbar").style.display = "none";
     document.getElementById("mainWrap").style.display = "none";
-    document.getElementById("supportFab").style.display = "none";
     document.getElementById("completeProfileBanner").style.display = "none";
     document.getElementById("pendingScreen").style.display = "block";
   }
@@ -1222,7 +1218,6 @@
   function showIncompleteScreen() {
     document.getElementById("pendingScreen").style.display = "none";
     document.getElementById("mainTabbar").style.display = "none";
-    document.getElementById("supportFab").style.display = "none";
     document.getElementById("completeProfileBanner").style.display = "none";
     document.getElementById("incompleteTopBar").style.display = "flex";
     document.getElementById("mainWrap").style.display = "block";
@@ -1303,7 +1298,6 @@
   function showFullDashboard(wantTab, withId) {
     document.getElementById("mainTabbar").style.display = "flex";
     document.getElementById("mainWrap").style.display = "block";
-    document.getElementById("supportFab").style.display = "flex";
     document.getElementById("pendingScreen").style.display = "none";
     document.getElementById("incompleteTopBar").style.display = "none";
     // In case this account just got approved straight out of
