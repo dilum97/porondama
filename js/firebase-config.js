@@ -56,4 +56,4 @@ const CLOUDINARY_UPLOAD_PRESET = "porondam";
 // firestore.rules (the "users" match block) — the JS check below
 // only hides the admin.html UI; the Firestore rule is what actually
 // enforces it server-side.
-const ADMIN_UID = "A5we8D8EnhX86EKkMkeu91ajTJC2";
+const ADMIN_UID = "jCq33c0h8qW2ngGPQsqOlQBHIHt2";
