@@ -152,6 +152,7 @@ function toPublicUser(u) {
     id: u.id,
     name: u.name,
     birthPlace: u.birthPlace || "",
+    district: u.district || "",
     birthDate: u.birthDate || "",
     photoURL: u.photoURL || "",
     bio: u.bio || "",
@@ -254,6 +255,7 @@ async function completeGoogleSignup(user) {
     birthDate: "",
     birthTime: "",
     birthPlace: "",
+    district: "",
     nakshatraId: null,
     rashiId: null,
     lagnaRashiId: null,
@@ -343,6 +345,7 @@ async function apiCall(url, options = {}) {
         birthDate: "",
         birthTime: "",
         birthPlace: "",
+        district: "",
         nakshatraId: null,
         rashiId: null,
         lagnaRashiId: null,
@@ -395,6 +398,7 @@ async function apiCall(url, options = {}) {
         birthDate: body.birthDate || "",
         birthTime: body.birthTime || "",
         birthPlace: body.birthPlace || "",
+        district: body.district || "",
         bio: body.bio || "",
         education: body.education || "",
         profession: body.profession || "",
@@ -853,6 +857,20 @@ function subscribeToConversations(callback, onError) {
         });
       }
       callback(conversations);
+    }, err => { if (onError) onError(err); });
+}
+
+// Realtime read-receipt helper — streams just the `readAt` map off the
+// conversation doc shared with `otherUid`, so the chat UI can tell
+// whether messages I sent have been seen yet (readAt[otherUid] at or
+// after a message's createdAt means that message has been seen).
+function subscribeToConversationMeta(otherUid, callback, onError) {
+  const uid = currentUid();
+  const convId = conversationIdFor(uid, otherUid);
+  return db.collection("conversations").doc(convId)
+    .onSnapshot(doc => {
+      const data = doc.data() || {};
+      callback({ readAt: data.readAt || {} });
     }, err => { if (onError) onError(err); });
 }
 
