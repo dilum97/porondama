@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>පොරොන්දම් විස්තර · Porondama</title>
+<link rel="icon" href="img/icon-192.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#04211a">
+<link rel="stylesheet" href="css/style.css">
+<script src="js/theme.js"></script>
+</head>
+<body>
+<div class="topbar">
+  <a href="dashboard.html" class="brand">
+    <img src="img/logo2.png" alt="Porondama" class="brand-logo">
+  </a>
+  <div class="nav-links">
+    <a href="dashboard.html" class="back-arrow" title="ආපසු" aria-label="ආපසු">←</a>
+  </div>
+</div>
+
+<div class="wrap match-detail-wrap">
+  <div id="content">Loading...</div>
+</div>
+
+<div id="lightbox" class="lightbox" style="display:none;" onclick="if(event.target===this) closeLightbox()">
+  <button type="button" class="lightbox-close" onclick="closeLightbox()">✕</button>
+  <button type="button" class="lightbox-nav lightbox-prev" onclick="lightboxNav(-1)">‹</button>
+  <img id="lightboxImg" src="" alt="">
+  <button type="button" class="lightbox-nav lightbox-next" onclick="lightboxNav(1)">›</button>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="data/reference.js"></script>
+<script src="js/matching.js"></script>
+<script src="js/image-compress.js"></script>
+<script src="js/cloudinary.js"></script>
+<script src="js/api.js"></script>
+<script>
+  let currentGalleryPhotos = [];
+  let carouselIndex = 0;
+
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s == null ? "" : s;
+    return div.innerHTML;
+  }
+
+  window.carouselNav = function (delta) {
+    if (!currentGalleryPhotos.length) return;
+    carouselIndex = (carouselIndex + delta + currentGalleryPhotos.length) % currentGalleryPhotos.length;
+    const img = document.getElementById("carouselImg");
+    if (img) img.src = currentGalleryPhotos[carouselIndex];
+    document.querySelectorAll("#carouselDots .carousel-dot").forEach((dot, i) => {
+      dot.classList.toggle("active", i === carouselIndex);
+    });
+  };
+
+  let lightboxIndex = 0;
+  window.openLightbox = function (photos, index) {
+    currentGalleryPhotos = photos;
+    lightboxIndex = index;
+    document.getElementById("lightboxImg").src = currentGalleryPhotos[lightboxIndex];
+    document.getElementById("lightbox").style.display = "flex";
+  };
+  window.closeLightbox = function () {
+    document.getElementById("lightbox").style.display = "none";
+  };
+  window.lightboxNav = function (delta) {
+    lightboxIndex = (lightboxIndex + delta + currentGalleryPhotos.length) % currentGalleryPhotos.length;
+    document.getElementById("lightboxImg").src = currentGalleryPhotos[lightboxIndex];
+  };
+  document.addEventListener("keydown", (e) => {
+    if (document.getElementById("lightbox").style.display !== "flex") return;
+    if (e.key === "Escape") closeLightbox();
+    if (e.key === "ArrowLeft") lightboxNav(-1);
+    if (e.key === "ArrowRight") lightboxNav(1);
+  });
+
+  (async () => {
+    const id = new URLSearchParams(location.search).get("id");
+    try {
+      const data = await apiCall("/api/matches/" + id);
+      const photos = (data.user.photos && data.user.photos.length) ? data.user.photos : (data.user.photoURL ? [data.user.photoURL] : []);
+      currentGalleryPhotos = photos;
+      carouselIndex = 0;
+      const matchedCount = data.factors.filter(f => f.score === f.max).length;
+      const totalFactors = data.factors.length;
+      const age = calculateAge(data.user.birthDate);
+      const content = document.getElementById("content");
+      content.innerHTML = `
+        <div class="detail-card name-card">
+          <h2 class="match-page-name">${escapeHtml(data.user.name)}</h2>
+          <button type="button" class="fav-toggle-btn" id="favToggleBtn" aria-label="Favorites">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.5-4.6-10-9.2C.4 8.4 2.2 5 5.6 5c1.9 0 3.4 1 4.4 2.5C11 6 12.5 5 14.4 5c3.4 0 5.2 3.4 3.6 6.8C19.5 16.4 12 21 12 21z"/></svg>
+          </button>
+        </div>
+
+        ${photos.length ? `
+        <div class="detail-card photo-card">
+          <div class="photo-carousel" id="photoCarousel">
+            <img id="carouselImg" src="${escapeHtml(photos[0])}" alt="${escapeHtml(data.user.name)}" onclick="openLightbox(currentGalleryPhotos, carouselIndex)">
+            ${photos.length > 1 ? `
+              <button type="button" class="carousel-arrow carousel-arrow-left" onclick="carouselNav(-1)" aria-label="පෙර photo">‹</button>
+              <button type="button" class="carousel-arrow carousel-arrow-right" onclick="carouselNav(1)" aria-label="ඊළඟ photo">›</button>
+              <div class="carousel-dots" id="carouselDots">
+                ${photos.map((_, i) => `<span class="carousel-dot${i === 0 ? " active" : ""}"></span>`).join("")}
+              </div>
+            ` : ""}
+          </div>
+        </div>` : ""}
+
+        <div class="detail-card percent-card">
+          <div class="ring ring-lg" style="--pct:${data.percentage};"><span>${data.percentage}%</span></div>
+          <div class="percent-info">
+            <div class="percent-label">${escapeHtml(data.user.name)} සමඟ ගැලපීම</div>
+            <div class="percent-score">${data.totalScore} / ${data.totalMax} ලකුණු</div>
+          </div>
+        </div>
+
+        <div class="detail-card porondam-card">
+          <h3 class="card-title">පොරොන්දම් 13 ගැලපීම</h3>
+          <table class="factor-table">
+            <thead><tr><th>පොරොන්දම</th><th>ලකුණු</th><th style="width:40%;"></th></tr></thead>
+            <tbody>
+              ${data.factors.map(f => `
+                <tr>
+                  <td>${escapeHtml(f.nameSi)}</td>
+                  <td>${f.score} / ${f.max}</td>
+                  <td><div class="bar-bg"><div class="bar-fill" style="width:${(f.score / f.max) * 100}%;"></div></div></td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+          <div class="porondam-summary">
+            <div class="porondam-summary-label">13 න් ගැලපෙන පොරොන්දම්: <b>${matchedCount} / ${totalFactors}</b></div>
+            <div class="bar-bg lg"><div class="bar-fill" style="width:${(matchedCount / totalFactors) * 100}%;"></div></div>
+          </div>
+          ${data.doshas.length ? `<div class="porondam-doshas">${data.doshas.map(d => `<span class="dosha-tag">${escapeHtml(d)}</span>`).join("")}</div>` : ""}
+        </div>
+
+        ${(data.user.education || data.user.profession || data.user.birthPlace || data.user.religion || data.user.ethnicity || data.user.height || age != null || data.user.bio) ? `
+        <div class="detail-card">
+          <h3 class="card-title">${escapeHtml(data.user.name)} ගැන</h3>
+          ${(age != null || data.user.height || data.user.birthPlace || data.user.religion || data.user.ethnicity || data.user.education || data.user.profession) ? `
+            <div class="profile-grid">
+              ${age != null ? `<div class="k">වයස</div><div class="v">${age}</div>` : ""}
+              ${data.user.height ? `<div class="k">උස</div><div class="v">${escapeHtml(data.user.height)} cm</div>` : ""}
+              ${data.user.birthPlace ? `<div class="k">උපන් ස්ථානය</div><div class="v">${escapeHtml(data.user.birthPlace)}</div>` : ""}
+              ${data.user.religion ? `<div class="k">ආගම</div><div class="v">${escapeHtml(data.user.religion)}</div>` : ""}
+              ${data.user.ethnicity ? `<div class="k">ජාතිය</div><div class="v">${escapeHtml(data.user.ethnicity)}</div>` : ""}
+              ${data.user.education ? `<div class="k">අධ්‍යාපනය</div><div class="v">${escapeHtml(data.user.education)}</div>` : ""}
+              ${data.user.profession ? `<div class="k">වෘත්තිය</div><div class="v">${escapeHtml(data.user.profession)}</div>` : ""}
+            </div>` : ""}
+          ${data.user.bio ? `<p class="about-bio">${escapeHtml(data.user.bio)}</p>` : ""}
+        </div>` : ""}
+
+        <div class="detail-card info-notice-card">
+          <p>මෙය සම්ප්‍රදායික පොරොන්දම් ක්‍රමය මත පදනම් වූ ස්වයංක්‍රීය ගණනයකි. විවාහයට පෙර සම්පූර්ණ කේන්දර පරීක්ෂණයක් සඳහා පළපුරුදු ජ්‍යෝතිෂවරයෙකු හමුවීම නිර්දේශ කරමු.</p>
+        </div>
+
+        <div class="contact-actions">
+          ${data.user.facebook ? `<a class="btn btn-facebook" href="${escapeHtml(data.user.facebook)}" target="_blank" rel="noopener noreferrer">Facebook ගිණුම</a>` : ""}
+          ${data.user.whatsapp ? `<a class="btn btn-whatsapp" href="https://wa.me/${escapeHtml(data.user.whatsapp.replace(/[^0-9]/g, ''))}" target="_blank" rel="noopener noreferrer">WhatsApp මගින් සම්බන්ධ වන්න</a>` : ""}
+          <button class="btn btn-primary message-btn" onclick="location.href='dashboard.html?with=${data.user.id}'">${escapeHtml(data.user.name)} ට පණිවිඩයක් යවන්න</button>
+        </div>
+      `;
+
+      // Favorite (bookmark) toggle — reflect current state, then
+      // add/remove on click. Best-effort: a failure here shouldn't
+      // block the rest of the page from working.
+      const favBtn = document.getElementById("favToggleBtn");
+      let isFav = false;
+      try {
+        const { ids } = await apiCall("/api/favorites/ids");
+        isFav = ids.includes(id);
+        favBtn.classList.toggle("active", isFav);
+      } catch (e) { /* not logged in edge-case etc — leave heart outlined */ }
+      favBtn.addEventListener("click", async () => {
+        favBtn.disabled = true;
+        try {
+          if (isFav) {
+            await apiCall("/api/favorites/" + id, { method: "DELETE" });
+          } else {
+            await apiCall("/api/favorites/" + id, { method: "POST" });
+          }
+          isFav = !isFav;
+          favBtn.classList.toggle("active", isFav);
+        } catch (e) { /* silent — heart state just won't flip */ }
+        favBtn.disabled = false;
+      });
+    } catch (err) {
+      document.getElementById("content").innerHTML = `<div class="error-box">${escapeHtml(err.message)}</div>`;
+    }
+  })();
+</script>
+<script src="js/sw-register.js"></script>
+</body>
+</html>

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ලොග් වන්න · Porondama</title>
+<link rel="icon" href="img/icon-192.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#04211a">
+<link rel="stylesheet" href="css/style.css">
+<script src="js/theme.js"></script>
+</head>
+<body>
+<video class="bg-video" autoplay muted loop playsinline poster="img/login-bg-poster.jpg">
+  <source src="img/login-bg.mp4" type="video/mp4">
+</video>
+<div class="bg-video-overlay"></div>
+<div class="auth-shell">
+  <div class="auth-card">
+    <img src="img/logo.png" alt="Porondama" class="login-logo">
+    <p style="text-align:center; color:var(--ivory-dim); margin-top:0;">ඔබේ ගිණුමට පිවිසෙන්න</p>
+
+    <form id="loginForm">
+      <label for="username">පරිශීලක නාමය (Username)</label>
+      <input id="username" name="username" required autocomplete="username">
+
+      <label for="password">මුරපදය (Password)</label>
+      <input id="password" name="password" type="password" required autocomplete="current-password">
+
+      <button type="submit" class="btn-primary">ලොග් වන්න</button>
+      <div class="error-box" id="errorBox" style="display:none;"></div>
+    </form>
+
+    <div class="auth-divider"><span>හෝ</span></div>
+
+    <button type="button" class="btn google-btn" id="googleBtn">
+      <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.57 2.7-3.87 2.7-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.96v2.33A9 9 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.95 10.7A5.4 5.4 0 0 1 3.67 9c0-.59.1-1.16.28-1.7V4.97H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.03l2.99-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.46 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 0 0 .96 4.97l2.99 2.33C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+      Google ගිණුම මගින් ලොග් වන්න
+    </button>
+    <div class="error-box" id="googleErrorBox" style="display:none;"></div>
+
+    <div class="link-line">ගිණුමක් නැද්ද? <a href="register.html">අලුතින් ලියාපදිංචි වන්න</a></div>
+  </div>
+</div>
+
+<div class="notice-overlay" id="googleNoticeOverlay" style="display:none;">
+  <div class="auth-card wide">
+    <h1 style="text-align:center; margin: 0 0 4px;">ලියාපදිංචි වීමට පෙර</h1>
+    <div class="notice-text" style="margin-top:18px;">
+      <p>අවිවාහක නම් පමණක් මෙම වෙබ් අඩවියට ලියාපදිංචි වන්න.</p>
+      <p>මෙය සම්ප්‍රදායික අෂ්ටකූට පොරොන්දම් ක්‍රමය මත පදනම් වූ ස්වයංක්‍රීය ගණනයකි.</p>
+      <p>ඔබගේ කේන්ද්‍රයේ ඇති උපන් වෙලාව, නැකත, රාශිය සහ අනෙකුත් දත්ත නිවැරදිව ඇතුලත් කරන්න.</p>
+      <p>ඔබගේ ෆේස්බුක් ගිණුම සහ වට්සැප් අංකය ඔබ කැමති නම් පමනක් ඇතුලත් කිරීමට හැක.</p>
+      <p>විවාහයට පෙර සම්පූර්ණ කේන්දර පරීක්ෂණයක් සඳහා පළපුරුදු ජ්‍යෝතිෂවරයෙකු හමුවීම නිර්දේශ කරමු.</p>
+    </div>
+    <label class="notice-agree">
+      <input type="checkbox" id="googleAgreeCheckbox">
+      නියමයන් සහ කොන්දේසි වලට එකඟ වෙමි
+    </label>
+    <div style="display:flex; gap:10px; margin-top:18px;">
+      <button type="button" class="btn btn-secondary" id="googleNoticeCancel" style="width:100%;">අවලංගු</button>
+      <button type="button" class="btn-primary" id="googleNoticeProceed" style="width:100%; margin-top:0;" disabled>ඉදිරියට යන්න</button>
+    </div>
+    <div class="error-box" id="googleErrorBox2" style="display:none;"></div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="data/reference.js"></script>
+<script src="js/matching.js"></script>
+<script src="js/image-compress.js"></script>
+<script src="js/cloudinary.js"></script>
+<script src="js/api.js"></script>
+<script>
+  document.getElementById("loginForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("errorBox");
+    errorBox.style.display = "none";
+    try {
+      await apiCall("/api/login", {
+        method: "POST",
+        body: JSON.stringify({
+          username: document.getElementById("username").value,
+          password: document.getElementById("password").value
+        })
+      });
+      location.href = "dashboard.html";
+    } catch (err) {
+      showError(errorBox, err.message);
+    }
+  });
+  let pendingGoogleUser = null;
+
+  document.getElementById("googleBtn").addEventListener("click", async () => {
+    const errorBox = document.getElementById("googleErrorBox");
+    errorBox.style.display = "none";
+    let result;
+    try {
+      result = await googleSignInAuthOnly();
+    } catch (err) {
+      showError(errorBox, err.message || "Google ගිණුමෙන් ලොග් වීම අසාර්ථකයි");
+      return;
+    }
+    if (result.isNewUser) {
+      // Brand-new Google account — show the registration notice before
+      // creating the profile.
+      pendingGoogleUser = result.user;
+      document.getElementById("googleAgreeCheckbox").checked = false;
+      document.getElementById("googleNoticeProceed").disabled = true;
+      document.getElementById("googleErrorBox2").style.display = "none";
+      document.getElementById("googleNoticeOverlay").style.display = "flex";
+    } else {
+      // Already has a profile — straight into the site, no notice.
+      location.href = "dashboard.html";
+    }
+  });
+  document.getElementById("googleAgreeCheckbox").addEventListener("change", (e) => {
+    document.getElementById("googleNoticeProceed").disabled = !e.target.checked;
+  });
+  document.getElementById("googleNoticeCancel").addEventListener("click", async () => {
+    document.getElementById("googleNoticeOverlay").style.display = "none";
+    pendingGoogleUser = null;
+    try { await auth.signOut(); } catch {}
+  });
+  document.getElementById("googleNoticeProceed").addEventListener("click", async () => {
+    const errorBox = document.getElementById("googleErrorBox2");
+    errorBox.style.display = "none";
+    try {
+      await completeGoogleSignup(pendingGoogleUser);
+      document.getElementById("googleNoticeOverlay").style.display = "none";
+      location.href = "dashboard.html?tab=settings";
+    } catch (err) {
+      showError(errorBox, err.message || "දෝෂයක් ඇතිවිය");
+    }
+  });
+</script>
+<script src="js/sw-register.js"></script>
+</body>
+</html>

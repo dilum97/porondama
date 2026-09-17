@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin · Porondama</title>
+<link rel="icon" href="img/icon-192.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#04211a">
+<link rel="stylesheet" href="css/style.css">
+<script src="js/theme.js"></script>
+</head>
+<body>
+<div class="topbar">
+  <a href="dashboard.html" class="brand">
+    <img src="img/logo2.png" alt="Porondama" class="brand-logo">
+  </a>
+  <div class="nav-links">
+    <a href="dashboard.html">← Back to site</a>
+    <a href="#" id="logoutLink">Logout</a>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="section-title">
+    <h2>Admin Panel</h2>
+    <span class="hint" id="statsHint"></span>
+  </div>
+
+  <div class="admin-subnav">
+    <button type="button" class="active" data-view="active">Active Members <span class="count" id="countActive"></span></button>
+    <button type="button" data-view="requests">Requests <span class="count" id="countRequests"></span></button>
+    <button type="button" data-view="online">Online <span class="count" id="countOnline"></span></button>
+    <button type="button" data-view="messages">Messages <span class="count" id="countMessages"></span></button>
+  </div>
+
+  <!-- ============ ACTIVE MEMBERS ============ -->
+  <div class="admin-view" id="view-active">
+    <input id="searchInput" placeholder="Search by name..." style="margin-bottom:18px;">
+    <div id="adminList" class="admin-list"><div class="empty-state">Loading...</div></div>
+  </div>
+
+  <!-- ============ PENDING REQUESTS ============ -->
+  <div class="admin-view" id="view-requests" style="display:none;">
+    <div id="requestsList" class="admin-list"><div class="empty-state">Loading...</div></div>
+  </div>
+
+  <!-- ============ ONLINE NOW ============ -->
+  <div class="admin-view" id="view-online" style="display:none;">
+    <div id="onlineList" class="admin-list"><div class="empty-state">Loading...</div></div>
+  </div>
+
+  <!-- ============ SUPPORT MESSAGES (admin's own chats, same system as member-to-member messaging) ============ -->
+  <div class="admin-view" id="view-messages" style="display:none;">
+    <div id="adminConversationsView">
+      <div id="adminConvList" class="conv-list"><div class="empty-state">Loading...</div></div>
+    </div>
+    <div id="adminChatView" style="display:none;">
+      <div class="chat-shell">
+        <div class="chat-header">
+          <button class="back-btn" id="adminChatBackBtn">←</button>
+          <div class="chat-header-link">
+            <img id="adminChatAvatar" class="conv-avatar" src="" alt="">
+            <div class="conv-name" id="adminChatName"></div>
+          </div>
+        </div>
+        <div class="chat-messages" id="adminChatMessages"></div>
+        <form class="chat-input-row" id="adminChatForm">
+          <input id="adminChatInput" placeholder="Type a message..." autocomplete="off">
+          <button type="submit" class="btn btn-primary" style="margin-top:0; width:auto;">Send</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ REQUEST DETAIL MODAL ============ -->
+<!-- Opened by clicking a name in the pending-requests list. Shows
+     the full profile this person submitted for review, with a large
+     photo, before the admin decides to approve/reject. -->
+<div id="requestModal" class="modal-overlay" style="display:none;">
+  <div class="modal-card">
+    <button type="button" class="modal-close-btn" id="requestModalCloseBtn">✕</button>
+    <div id="requestModalBody"></div>
+  </div>
+</div>
+
+<!-- ============ MEMBER DETAIL MODAL ============ -->
+<!-- Opened by clicking a name in the Active Members list or the
+     Online list. Shows that member's full profile plus Chat /
+     Disable / Delete actions. -->
+<div id="memberModal" class="modal-overlay" style="display:none;">
+  <div class="modal-card">
+    <button type="button" class="modal-close-btn" id="memberModalCloseBtn">✕</button>
+    <div id="memberModalBody"></div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="data/reference.js"></script>
+<script src="js/matching.js"></script>
+<script src="js/image-compress.js"></script>
+<script src="js/cloudinary.js"></script>
+<script src="js/api.js"></script>
+<script>
+  function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.textContent = s == null ? "" : s;
+    return div.innerHTML;
+  }
+
+  function timeAgo(ts) {
+    if (!ts || !ts.toDate) return "";
+    const diffMs = Date.now() - ts.toDate().getTime();
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return mins + "m ago";
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return hrs + "h ago";
+    return Math.floor(hrs / 24) + "d ago";
+  }
+
+  // "Online" = a presence heartbeat (see updateLastSeen() in api.js,
+  // called every 30s from dashboard.html) seen within the last 2 min.
+  const ONLINE_WINDOW_MS = 2 * 60 * 1000;
+  function isOnline(u) {
+    if (!u.lastSeen || !u.lastSeen.toDate) return false;
+    return (Date.now() - u.lastSeen.toDate().getTime()) < ONLINE_WINDOW_MS;
+  }
+
+  let allUsers = [];
+  let allRequests = [];
+
+  // ---------------- sub-nav ----------------
+  const views = ["active", "requests", "online", "messages"];
+  function showView(name) {
+    views.forEach(v => {
+      document.getElementById("view-" + v).style.display = v === name ? "block" : "none";
+    });
+    document.querySelectorAll(".admin-subnav button").forEach(b => {
+      b.classList.toggle("active", b.dataset.view === name);
+    });
+    if (name === "messages" && !adminActiveChat) renderAdminConvList();
+  }
+  document.querySelectorAll(".admin-subnav button").forEach(btn => {
+    btn.addEventListener("click", () => showView(btn.dataset.view));
+  });
+
+  // ---------------- active members ----------------
+  function renderActive(filterText) {
+    const list = document.getElementById("adminList");
+    const q = (filterText || "").trim().toLowerCase();
+    const rows = q ? allUsers.filter(u => u.name.toLowerCase().includes(q)) : allUsers;
+
+    document.getElementById("statsHint").textContent =
+      `${allUsers.length} active members · ${allUsers.filter(u => u.disabled).length} disabled`;
+    document.getElementById("countActive").textContent = allUsers.length;
+    document.getElementById("countOnline").textContent = allUsers.filter(isOnline).length;
+
+    if (rows.length === 0) {
+      list.innerHTML = `<div class="empty-state">No members found.</div>`;
+      return;
+    }
+
+    list.innerHTML = rows.map(u => `
+      <div class="admin-row ${u.disabled ? 'disabled' : ''}">
+        ${u.photoURL ? `<img class="conv-avatar" src="${escapeHtml(u.photoURL)}" alt="">` : `<div class="conv-avatar"></div>`}
+        <div class="admin-row-info">
+          <div class="conv-name request-name-link" onclick="openMemberDetail('${u.id}')">${isOnline(u) ? '<span class="online-dot"></span>' : ''}${escapeHtml(u.name)}</div>
+          <div class="conv-last">${escapeHtml(u.gender || '')}${u.birthPlace ? ' · ' + escapeHtml(u.birthPlace) : ''}${u.disabled ? ' <span class="dosha-tag">Disabled</span>' : ''}</div>
+        </div>
+        <div class="admin-row-actions">
+          <button class="btn btn-secondary" onclick="toggleDisabled('${u.id}', ${!u.disabled})">${u.disabled ? 'Enable' : 'Disable'}</button>
+          <button class="btn detail-btn" style="border-color:var(--rose); color:var(--rose);" onclick="deleteUser('${u.id}','${escapeHtml(u.name)}')">Delete</button>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  window.toggleDisabled = async function (id, disabled) {
+    try {
+      await apiCall("/api/admin/users/" + id, { method: "PUT", body: JSON.stringify({ disabled }) });
+      const u = allUsers.find(x => x.id === id);
+      if (u) u.disabled = disabled;
+      closeMemberModal();
+      renderActive(document.getElementById("searchInput").value);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  window.deleteUser = async function (id, name) {
+    if (!confirm(`Permanently delete ${name}'s profile? (The Auth account itself must be removed separately via the Firebase Console.)`)) return;
+    try {
+      await apiCall("/api/admin/users/" + id, { method: "DELETE" });
+      allUsers = allUsers.filter(x => x.id !== id);
+      closeMemberModal();
+      renderActive(document.getElementById("searchInput").value);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  document.getElementById("searchInput").addEventListener("input", (e) => renderActive(e.target.value));
+
+  async function loadActive() {
+    try {
+      const { users } = await apiCall("/api/admin/users");
+      allUsers = users;
+      renderActive("");
+      renderOnline();
+    } catch (err) {
+      document.getElementById("adminList").innerHTML = `<div class="error-box">${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  // ---------------- pending requests ----------------
+  function renderRequests() {
+    document.getElementById("countRequests").textContent = allRequests.length;
+    const list = document.getElementById("requestsList");
+    if (allRequests.length === 0) {
+      list.innerHTML = `<div class="empty-state">No new requests.</div>`;
+      return;
+    }
+    // List row only: name, gender, age — click the name to open the
+    // full submitted-profile card (photo, kendara details, etc).
+    list.innerHTML = allRequests.map(r => {
+      const age = calculateAge(r.birthDate);
+      return `
+      <div class="admin-row" style="grid-template-columns: auto 1fr;">
+        ${r.photoURL ? `<img class="conv-avatar" src="${escapeHtml(r.photoURL)}" alt="">` : `<div class="conv-avatar"></div>`}
+        <div class="admin-row-info">
+          <div class="conv-name request-name-link" onclick="openRequestDetail('${r.id}')">${escapeHtml(r.name || '(No name)')}</div>
+          <div class="conv-last">${escapeHtml(r.gender === 'male' ? 'Male' : r.gender === 'female' ? 'Female' : '')}${age != null ? ' · Age ' + age : ''}</div>
+        </div>
+      </div>
+    `;
+    }).join("");
+  }
+
+  function nakshatraName(id) {
+    const n = (typeof NAKSHATRAS !== "undefined" ? NAKSHATRAS : []).find(x => x.id === Number(id));
+    return n ? (n.en || n.si) : null;
+  }
+  function rashiName(id) {
+    const r = (typeof RASHIS !== "undefined" ? RASHIS : []).find(x => x.id === Number(id));
+    return r ? (r.en || r.si) : null;
+  }
+
+  window.openRequestDetail = function (id) {
+    const r = allRequests.find(x => x.id === id);
+    if (!r) return;
+    const age = calculateAge(r.birthDate);
+    const photos = r.photos && r.photos.length ? r.photos : (r.photoURL ? [r.photoURL] : []);
+    document.getElementById("requestModalBody").innerHTML = `
+      ${photos.length ? `
+        <div class="request-detail-photos">
+          ${photos.map(p => `<img src="${escapeHtml(p)}" alt="">`).join("")}
+        </div>` : `<div class="empty-state" style="padding:20px 0;">No photo</div>`}
+      <h2 style="margin: 14px 0 2px;">${escapeHtml(r.name || '(No name)')}</h2>
+      <div class="hint" style="margin-bottom:16px;">${r.usernameLower ? '@' + escapeHtml(r.usernameLower) : ''}</div>
+      <div class="profile-grid" style="margin-bottom:18px;">
+        ${r.gender ? `<div class="k">Gender</div><div class="v">${r.gender === 'male' ? 'Male' : 'Female'}</div>` : ""}
+        ${age != null ? `<div class="k">Age</div><div class="v">${age}</div>` : ""}
+        ${r.birthDate ? `<div class="k">Birth Date</div><div class="v">${escapeHtml(r.birthDate)}</div>` : ""}
+        ${r.birthTime ? `<div class="k">Birth Time</div><div class="v">${escapeHtml(r.birthTime)}</div>` : ""}
+        ${r.birthPlace ? `<div class="k">Birth Place</div><div class="v">${escapeHtml(r.birthPlace)}</div>` : ""}
+        ${r.lagnaRashiId ? `<div class="k">Lagna</div><div class="v">${escapeHtml(rashiName(r.lagnaRashiId) || r.lagnaRashiId)}</div>` : ""}
+        ${r.nakshatraId ? `<div class="k">Nakshatra</div><div class="v">${escapeHtml(nakshatraName(r.nakshatraId) || r.nakshatraId)}</div>` : ""}
+        ${r.rashiId ? `<div class="k">Rashi</div><div class="v">${escapeHtml(rashiName(r.rashiId) || r.rashiId)}</div>` : ""}
+        ${r.height ? `<div class="k">Height</div><div class="v">${escapeHtml(r.height)} cm</div>` : ""}
+        ${r.religion ? `<div class="k">Religion</div><div class="v">${escapeHtml(r.religion)}</div>` : ""}
+        ${r.ethnicity ? `<div class="k">Ethnicity</div><div class="v">${escapeHtml(r.ethnicity)}</div>` : ""}
+        ${r.education ? `<div class="k">Education</div><div class="v">${escapeHtml(r.education)}</div>` : ""}
+        ${r.profession ? `<div class="k">Profession</div><div class="v">${escapeHtml(r.profession)}</div>` : ""}
+      </div>
+      ${r.bio ? `<p style="color:var(--ivory); font-size:0.92rem; margin-bottom:18px;">${escapeHtml(r.bio)}</p>` : ""}
+      ${(r.facebook || r.whatsapp) ? `
+        <div style="display:flex; gap:10px; margin-bottom:18px; flex-wrap:wrap;">
+          ${r.facebook ? `<a class="btn btn-secondary" style="width:auto;" href="${escapeHtml(r.facebook)}" target="_blank" rel="noopener noreferrer">Facebook Profile</a>` : ""}
+          ${r.whatsapp ? `<a class="btn btn-secondary" style="width:auto;" href="https://wa.me/${escapeHtml(r.whatsapp.replace(/[^0-9]/g, ''))}" target="_blank" rel="noopener noreferrer">WhatsApp</a>` : ""}
+        </div>` : ""}
+      <div class="admin-row-actions" style="grid-column: 1 / -1; display:flex; gap:10px;">
+        <button class="btn btn-primary" style="margin-top:0;" onclick="approveRequest('${r.id}','${escapeHtml(r.name)}')">Approve</button>
+        <button class="btn detail-btn" style="border-color:var(--rose); color:var(--rose);" onclick="rejectRequest('${r.id}','${escapeHtml(r.name)}')">Reject</button>
+      </div>
+    `;
+    document.getElementById("requestModal").style.display = "flex";
+  };
+
+  function closeRequestModal() {
+    document.getElementById("requestModal").style.display = "none";
+  }
+  document.getElementById("requestModalCloseBtn").addEventListener("click", closeRequestModal);
+  document.getElementById("requestModal").addEventListener("click", (e) => {
+    if (e.target.id === "requestModal") closeRequestModal();
+  });
+
+  // ---------------- member detail modal (Active + Online lists) ----------------
+  // Same look as the request-review card, but for an already-approved
+  // member: shows their full profile plus Chat / Disable / Delete.
+  window.openMemberDetail = function (id) {
+    const u = allUsers.find(x => x.id === id);
+    if (!u) return;
+    const age = calculateAge(u.birthDate);
+    const photos = u.photos && u.photos.length ? u.photos : (u.photoURL ? [u.photoURL] : []);
+    document.getElementById("memberModalBody").innerHTML = `
+      ${photos.length ? `
+        <div class="request-detail-photos">
+          ${photos.map(p => `<img src="${escapeHtml(p)}" alt="">`).join("")}
+        </div>` : `<div class="empty-state" style="padding:20px 0;">No photo</div>`}
+      <h2 style="margin: 14px 0 2px;">${isOnline(u) ? '<span class="online-dot"></span>' : ''}${escapeHtml(u.name || '(No name)')} ${u.disabled ? '<span class="dosha-tag">Disabled</span>' : ''}</h2>
+      <div class="hint" style="margin-bottom:16px;">${u.usernameLower ? '@' + escapeHtml(u.usernameLower) : ''}</div>
+      <div class="profile-grid" style="margin-bottom:18px;">
+        ${u.gender ? `<div class="k">Gender</div><div class="v">${u.gender === 'male' ? 'Male' : 'Female'}</div>` : ""}
+        ${age != null ? `<div class="k">Age</div><div class="v">${age}</div>` : ""}
+        ${u.birthDate ? `<div class="k">Birth Date</div><div class="v">${escapeHtml(u.birthDate)}</div>` : ""}
+        ${u.birthTime ? `<div class="k">Birth Time</div><div class="v">${escapeHtml(u.birthTime)}</div>` : ""}
+        ${u.birthPlace ? `<div class="k">Birth Place</div><div class="v">${escapeHtml(u.birthPlace)}</div>` : ""}
+        ${u.lagnaRashiId ? `<div class="k">Lagna</div><div class="v">${escapeHtml(rashiName(u.lagnaRashiId) || u.lagnaRashiId)}</div>` : ""}
+        ${u.nakshatraId ? `<div class="k">Nakshatra</div><div class="v">${escapeHtml(nakshatraName(u.nakshatraId) || u.nakshatraId)}</div>` : ""}
+        ${u.rashiId ? `<div class="k">Rashi</div><div class="v">${escapeHtml(rashiName(u.rashiId) || u.rashiId)}</div>` : ""}
+        ${u.height ? `<div class="k">Height</div><div class="v">${escapeHtml(u.height)} cm</div>` : ""}
+        ${u.religion ? `<div class="k">Religion</div><div class="v">${escapeHtml(u.religion)}</div>` : ""}
+        ${u.ethnicity ? `<div class="k">Ethnicity</div><div class="v">${escapeHtml(u.ethnicity)}</div>` : ""}
+        ${u.education ? `<div class="k">Education</div><div class="v">${escapeHtml(u.education)}</div>` : ""}
+        ${u.profession ? `<div class="k">Profession</div><div class="v">${escapeHtml(u.profession)}</div>` : ""}
+      </div>
+      ${u.bio ? `<p style="color:var(--ivory); font-size:0.92rem; margin-bottom:18px;">${escapeHtml(u.bio)}</p>` : ""}
+      ${(u.facebook || u.whatsapp) ? `
+        <div style="display:flex; gap:10px; margin-bottom:18px; flex-wrap:wrap;">
+          ${u.facebook ? `<a class="btn btn-secondary" style="width:auto;" href="${escapeHtml(u.facebook)}" target="_blank" rel="noopener noreferrer">Facebook Profile</a>` : ""}
+          ${u.whatsapp ? `<a class="btn btn-secondary" style="width:auto;" href="https://wa.me/${escapeHtml(u.whatsapp.replace(/[^0-9]/g, ''))}" target="_blank" rel="noopener noreferrer">WhatsApp</a>` : ""}
+        </div>` : ""}
+      <div class="admin-row-actions" style="grid-column: 1 / -1; display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn btn-primary" style="margin-top:0; width:auto;" onclick="chatWithMember('${u.id}','${escapeHtml(u.name)}','${escapeHtml(u.photoURL || '')}')">Chat</button>
+        <button class="btn btn-secondary" style="width:auto;" onclick="toggleDisabled('${u.id}', ${!u.disabled})">${u.disabled ? 'Enable' : 'Disable'}</button>
+        <button class="btn detail-btn" style="width:auto; border-color:var(--rose); color:var(--rose);" onclick="deleteUser('${u.id}','${escapeHtml(u.name)}')">Delete</button>
+      </div>
+    `;
+    document.getElementById("memberModal").style.display = "flex";
+  };
+
+  function closeMemberModal() {
+    document.getElementById("memberModal").style.display = "none";
+  }
+  document.getElementById("memberModalCloseBtn").addEventListener("click", closeMemberModal);
+  document.getElementById("memberModal").addEventListener("click", (e) => {
+    if (e.target.id === "memberModal") closeMemberModal();
+  });
+
+  // Jumps to the Messages tab and opens (or starts) a chat with this
+  // member — reuses the exact same conversation system as the
+  // member-to-member Messages tab.
+  window.chatWithMember = function (id, name, photoURL) {
+    closeMemberModal();
+    showView("messages");
+    openAdminChat(id, name, photoURL);
+  };
+
+  window.approveRequest = async function (id, name) {
+    if (!confirm(`Approve ${name} and add them to the site?`)) return;
+    try {
+      await apiCall("/api/admin/requests/" + id + "/approve", { method: "PUT" });
+      allRequests = allRequests.filter(x => x.id !== id);
+      closeRequestModal();
+      renderRequests();
+      loadActive();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  window.rejectRequest = async function (id, name) {
+    if (!confirm(`Reject and delete ${name}'s request?`)) return;
+    try {
+      await apiCall("/api/admin/requests/" + id, { method: "DELETE" });
+      allRequests = allRequests.filter(x => x.id !== id);
+      closeRequestModal();
+      renderRequests();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  async function loadRequests() {
+    try {
+      const { requests } = await apiCall("/api/admin/requests");
+      allRequests = requests;
+      renderRequests();
+    } catch (err) {
+      document.getElementById("requestsList").innerHTML = `<div class="error-box">${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  // ---------------- online now ----------------
+  function renderOnline() {
+    const list = document.getElementById("onlineList");
+    const online = allUsers.filter(isOnline);
+    document.getElementById("countOnline").textContent = online.length;
+    if (online.length === 0) {
+      list.innerHTML = `<div class="empty-state">No one is online right now.</div>`;
+      return;
+    }
+    list.innerHTML = online.map(u => `
+      <div class="admin-row" style="grid-template-columns: auto 1fr;">
+        ${u.photoURL ? `<img class="conv-avatar" src="${escapeHtml(u.photoURL)}" alt="">` : `<div class="conv-avatar"></div>`}
+        <div class="admin-row-info">
+          <div class="conv-name request-name-link" onclick="openMemberDetail('${u.id}')"><span class="online-dot"></span>${escapeHtml(u.name)}</div>
+          <div class="conv-last">Active ${timeAgo(u.lastSeen)}</div>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  // ---------------- support messages (admin is just another
+  // participant here — reuses subscribeToConversations/Messages from
+  // api.js exactly like dashboard.html's Messages tab does) ----------------
+  let adminMe = null;
+  let adminActiveChat = null;
+  let adminConvUnsub = null;
+  let adminMsgUnsub = null;
+  let latestAdminConversations = [];
+
+  function renderAdminConvList() {
+    const list = document.getElementById("adminConvList");
+    document.getElementById("countMessages").textContent = latestAdminConversations.length;
+    if (latestAdminConversations.length === 0) {
+      list.innerHTML = `<div class="empty-state">No one has sent a message yet.</div>`;
+      return;
+    }
+    list.innerHTML = latestAdminConversations.map(c => `
+      <div class="conv-item" onclick="openAdminChat('${c.user.id}','${escapeHtml(c.user.name)}','${escapeHtml(c.user.photoURL)}')">
+        <img class="conv-avatar" src="${escapeHtml(c.user.photoURL)}" alt="">
+        <div class="conv-info">
+          <div class="conv-name">${escapeHtml(c.user.name)}</div>
+          <div class="conv-last ${c.unread ? 'unread' : ''}">${escapeHtml(c.lastMessage)}</div>
+        </div>
+        <div class="conv-time">${timeAgo(c.lastMessageAt)}</div>
+      </div>
+    `).join("");
+  }
+
+  window.openAdminChat = function (id, name, photoURL) {
+    adminActiveChat = { id, name, photoURL };
+    document.getElementById("adminConversationsView").style.display = "none";
+    document.getElementById("adminChatView").style.display = "block";
+    document.getElementById("adminChatAvatar").src = photoURL || "";
+    document.getElementById("adminChatName").textContent = name;
+
+    if (adminMsgUnsub) adminMsgUnsub();
+    const box = document.getElementById("adminChatMessages");
+    box.innerHTML = `<div class="empty-state">Loading...</div>`;
+    adminMsgUnsub = subscribeToMessages(id, messages => {
+      box.innerHTML = messages.map(m => `
+        <div class="msg-row ${m.fromUid === adminMe.uid ? 'me' : 'them'}">
+          <div class="msg-bubble ${m.fromUid === adminMe.uid ? 'me' : 'them'}">${escapeHtml(m.text)}</div>
+        </div>
+      `).join("");
+      box.scrollTop = box.scrollHeight;
+    }, err => {
+      box.innerHTML = `<div class="error-box">${escapeHtml(err.message || 'Failed to load messages')}</div>`;
+    });
+    markConversationRead(id);
+  };
+
+  document.getElementById("adminChatBackBtn").addEventListener("click", () => {
+    if (adminMsgUnsub) { adminMsgUnsub(); adminMsgUnsub = null; }
+    adminActiveChat = null;
+    document.getElementById("adminChatView").style.display = "none";
+    document.getElementById("adminConversationsView").style.display = "block";
+  });
+
+  document.getElementById("adminChatForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = document.getElementById("adminChatInput");
+    const text = input.value.trim();
+    if (!text || !adminActiveChat) return;
+    input.value = "";
+    try {
+      await apiCall("/api/messages/" + adminActiveChat.id, { method: "POST", body: JSON.stringify({ text }) });
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
+  function startAdminConversationsSubscription() {
+    adminConvUnsub = subscribeToConversations(conversations => {
+      latestAdminConversations = conversations;
+      document.getElementById("countMessages").textContent = conversations.length;
+      if (document.getElementById("view-messages").style.display !== "none" && !adminActiveChat) renderAdminConvList();
+    }, err => console.error("admin conversations failed:", err));
+  }
+
+  // ---------------- logout ----------------
+  document.getElementById("logoutLink").addEventListener("click", async (e) => {
+    e.preventDefault();
+    if (adminConvUnsub) adminConvUnsub();
+    if (adminMsgUnsub) adminMsgUnsub();
+    await auth.signOut();
+    location.href = "admin-login.html";
+  });
+
+  // ---------------- boot ----------------
+  (async () => {
+    const user = await new Promise(resolve => {
+      const unsub = auth.onAuthStateChanged(u => { unsub(); resolve(u); });
+    });
+    if (!user || user.uid !== ADMIN_UID) {
+      location.href = "admin-login.html";
+      return;
+    }
+    adminMe = user;
+
+    loadActive();
+    loadRequests();
+    startAdminConversationsSubscription();
+  })();
+</script>
+</body>
+</html>
