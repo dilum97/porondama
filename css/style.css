@@ -134,12 +134,12 @@ a { color: var(--gold-soft); }
 .lightbox img { max-width: 88vw; max-height: 84vh; border-radius: 10px; object-fit: contain; }
 .lightbox-close {
   position: absolute; top: 18px; right: 22px; background: transparent; border: none;
-  color: var(--ivory); font-size: 1.6rem; cursor: pointer; line-height: 1; padding: 0;
+  color: #f3efe1; font-size: 1.6rem; cursor: pointer; line-height: 1; padding: 0;
   display: flex; align-items: center; justify-content: center;
 }
 .lightbox-nav {
   position: absolute; top: 50%; transform: translateY(-50%); background: rgba(4,33,26,0.6);
-  border: none; color: var(--ivory); font-size: 2rem; width: 46px; height: 46px; border-radius: 50%;
+  border: none; color: #f3efe1; font-size: 2rem; width: 46px; height: 46px; border-radius: 50%;
   cursor: pointer; line-height: 1; padding: 0;
   display: flex; align-items: center; justify-content: center;
 }
@@ -315,10 +315,10 @@ button, .btn {
 }
 .carousel-arrow {
   position: absolute; top: 50%; transform: translateY(-50%); background: rgba(4,33,26,0.55);
-  border: none; color: var(--ivory); font-size: 1.8rem; width: 40px; height: 40px; border-radius: 50%;
-  cursor: pointer; line-height: 1; display: flex; align-items: center; justify-content: center;
+  border: none; color: #f3efe1; font-size: 1.8rem; width: 40px; height: 40px; border-radius: 50%;
+  cursor: pointer; line-height: 1; padding: 0; display: flex; align-items: center; justify-content: center;
 }
-.carousel-arrow:hover { background: rgba(4,33,26,0.85); color: var(--gold-soft); }
+.carousel-arrow:hover { background: rgba(4,33,26,0.85); color: #fccb50; }
 .carousel-arrow-left { left: 12px; }
 .carousel-arrow-right { right: 12px; }
 .carousel-dots { position: absolute; bottom: 12px; left: 0; right: 0; display: flex; justify-content: center; gap: 6px; }
@@ -560,7 +560,7 @@ img {
 
 /* ---------------- customer support button (Settings tab) ---------------- */
 .btn-support {
-  background: #14140f; color: var(--ivory); border: 1px solid #2a2a22;
+  background: #14140f; color: #f0ece0; border: 1px solid #2a2a22;
 }
 .btn-support:hover { background: #1c1c15; }
 
@@ -829,13 +829,14 @@ body.menu-open .wrap {
 .btn-danger { background: var(--rose); color: #fff; }
 .btn-danger:hover { filter: brightness(1.08); }
 
-/* ---------------- match.html: favorite (bookmark) toggle on the name card ---------------- */
+/* ---------------- match.html: favorite (bookmark) toggle — sits in the percent-card ---------------- */
 .fav-toggle-btn {
-  position: absolute; top: 16px; right: 16px; background: rgba(4,33,26,0.55); border: none;
-  color: var(--ivory-dim); width: 38px; height: 38px; border-radius: 50%; cursor: pointer;
+  background: rgba(4,33,26,0.55); border: none; padding: 0;
+  width: 38px; height: 38px; border-radius: 50%; cursor: pointer; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
+  font-size: 1.2rem; line-height: 1;
+  filter: grayscale(1) opacity(0.6);
+  transition: filter 0.15s ease, background 0.15s ease;
 }
 .fav-toggle-btn:hover { background: rgba(4,33,26,0.8); }
-.fav-toggle-btn.active { color: var(--gold); }
-.fav-toggle-btn svg { pointer-events: none; }
-.name-card { position: relative; }
+.fav-toggle-btn.active { filter: none; }
