@@ -95,9 +95,6 @@
       content.innerHTML = `
         <div class="detail-card name-card">
           <h2 class="match-page-name">${escapeHtml(data.user.name)}</h2>
-          <button type="button" class="fav-toggle-btn" id="favToggleBtn" aria-label="Favorites">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.5-4.6-10-9.2C.4 8.4 2.2 5 5.6 5c1.9 0 3.4 1 4.4 2.5C11 6 12.5 5 14.4 5c3.4 0 5.2 3.4 3.6 6.8C19.5 16.4 12 21 12 21z"/></svg>
-          </button>
         </div>
 
         ${photos.length ? `
@@ -120,6 +117,7 @@
             <div class="percent-label">${escapeHtml(data.user.name)} සමඟ ගැලපීම</div>
             <div class="percent-score">${data.totalScore} / ${data.totalMax} ලකුණු</div>
           </div>
+          <button type="button" class="fav-toggle-btn" id="favToggleBtn" aria-label="Favorites">❤️</button>
         </div>
 
         <div class="detail-card porondam-card">
