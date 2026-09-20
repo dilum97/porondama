@@ -5,13 +5,13 @@
  *
  * Mid-migration from the original 8-factor Vedic Ashtakoota-style
  * engine to the traditional Sri Lankan "Porondam 20" system — see
- * the migration-status note at the top of data/reference.js for
- * which factors are done vs still pending (17 of 20 scored + ආයුෂ
- * as an info-only tag; ලිංග and ග්‍රහ are not implemented — see that
- * file for why). This is a simplified/approximate implementation for
- * a fun pre-screen tool — NOT a substitute for a full reading by a
- * qualified astrologer. That disclaimer is already shown on
- * match.html; keep it there.
+ * the migration-status note at the top of data/reference.js. All 20
+ * factors are now scored, though ග්‍රහ (grahaScore below) is a
+ * simplified subset of the book's full chapter 20 — see that
+ * function's comment for exactly what's left out and why. This is a
+ * simplified/approximate implementation for a fun pre-screen tool —
+ * NOT a substitute for a full reading by a qualified astrologer. That
+ * disclaimer is already shown on match.html; keep it there.
  *
  * Depends on: data/reference.js (getNakshatra, getRashi, YONI_ENEMIES,
  * VEDHA_PAIRS, LORD_RELATION) being loaded first.
@@ -61,8 +61,10 @@ function nadiScore(nadiA, nadiB) {
 }
 
 function varnaScore(varnaA_boy, varnaB_girl) {
-  // Ideal: boy's varna rank <= girl's (1=Brahmin is "highest")
-  return varnaA_boy <= varnaB_girl ? { score: 1, max: 1 } : { score: 0, max: 1 };
+  // Ch.16: same varna = very good; boy's rank <= girl's (1=Brahmin
+  // highest) = good; girl's rank higher than boy's = very bad.
+  if (varnaA_boy === varnaB_girl) return { score: 2, max: 2 };
+  return varnaA_boy <= varnaB_girl ? { score: 1, max: 2 } : { score: 0, max: 2 };
 }
 
 function vashyaScore(vA, vB) {
@@ -155,6 +157,51 @@ function gothraScore(nakIdA, nakIdB) {
   return { score: sameNamed ? 0 : 1, max: 1 };
 }
 
+function lingaScore(lingaBoy, lingaGirl) {
+  const rel = LINGA_RELATION[`${lingaBoy}-${lingaGirl}`];
+  return { score: rel !== undefined ? rel : 1, max: 2 };
+}
+
+// Ch.20 ග්‍රහ පොරොන්දම — SIMPLIFIED. The book's full chapter (pages
+// 169-170) has two halves: (a) malefic-strength/combustion/affliction
+// rules around each person's own Lagna/7th/8th houses, which need
+// planetary *dignity* (exaltation, debilitation, combustion, weakness)
+// on top of position — a much bigger undertaking than a lookup table
+// — and (b) six clear cross-chart comparison rules (page 170, items
+// 1/2/4/5/6) that only need rashi + degree, which is what this scores.
+// Left OUT: the page-169 malefic-affliction rules, and page-170 items
+// 7-9 (their Lagna-aspect wording was too ambiguous to encode with
+// confidence). So this is a partial/approximate reading of ග්‍රහ
+// පොරොන්දම, not the full traditional check — consistent with the
+// "not a substitute for a qualified astrologer" disclaimer already on
+// match.html.
+function trikonaMatch(sputaA, sputaB, orbDegrees) {
+  if (!sputaA || !sputaB) return false;
+  const rashiDiff = ((sputaB.rashiId - sputaA.rashiId) % 12 + 12) % 12;
+  const isTrikona = rashiDiff === 0 || rashiDiff === 4 || rashiDiff === 8; // 1st/5th/9th from each other
+  if (!isTrikona) return false;
+  const degDiff = Math.abs(sputaA.degreeInRashi - sputaB.degreeInRashi);
+  return Math.min(degDiff, 30 - degDiff) <= orbDegrees;
+}
+
+function grahaScore(grahaBoy, grahaGirl) {
+  if (!grahaBoy || !grahaGirl) return null; // no data yet (older profile, or not saved) -> factor skipped
+  const orb = 3; // degrees — "අංශක සම" (same degree) tolerance
+  let points = 0;
+  // (1) girl's Ravi rashi === boy's Chandra rashi
+  if (grahaGirl.ravi.rashiId === grahaBoy.chandra.rashiId) points++;
+  // (2) boy's Ravi rashi === girl's Chandra rashi
+  if (grahaBoy.ravi.rashiId === grahaGirl.chandra.rashiId) points++;
+  // (4) girl's Ravi <-> boy's Chandra, trikona same-degree
+  if (trikonaMatch(grahaGirl.ravi, grahaBoy.chandra, orb)) points++;
+  if (trikonaMatch(grahaBoy.ravi, grahaGirl.chandra, orb)) points++;
+  // (5) both Chandra sputas, trikona same-degree
+  if (trikonaMatch(grahaGirl.chandra, grahaBoy.chandra, orb)) points++;
+  // (6) both Ravi sputas, trikona same-degree
+  if (trikonaMatch(grahaGirl.ravi, grahaBoy.ravi, orb)) points++;
+  return { score: points, max: 6 };
+}
+
 // Ch.18: weekday-counting rule, counted from the girl's day of week.
 // Same day, or 1-4 days after = auspicious; 5-6 days after = not.
 // birthDateStr: "YYYY-MM-DD". Returns null (factor skipped) if either
@@ -169,18 +216,23 @@ function dinaScore(boyBirthDateStr, girlBirthDateStr) {
   return { score: bad ? 0 : 2, max: 2 };
 }
 
-// Ch.12: Ayush (life-span) koota — informational only, NOT added to
-// the total score (Dilum's call: it's a comparison, not pass/fail).
+// Ch.12: Ayush (life-span) koota, now counted into the total score
+// per Dilum's call (so all implementable factors reach 20). The
+// book's text only *describes* whose life-span number is bigger —
+// it never labels either direction inauspicious — so equal shesha
+// scores full (harmonious match) and an unequal one scores partial
+// rather than zero, since the book gives no basis for a "bad" case.
 // Classical method: count nakshatra-to-nakshatra (inclusive) each
 // direction, add 27, then reduce mod 28 (0 -> treated as 28).
-function ayushInfo(nakIdA, nakIdB) {
+function ayushScore(nakIdA, nakIdB) {
   const girlToBoy = ((nakshatraDistance(nakIdA, nakIdB) + 27 - 1) % 28) + 1;
   const boyToGirl = ((nakshatraDistance(nakIdB, nakIdA) + 27 - 1) % 28) + 1;
-  if (girlToBoy === boyToGirl) return { label: "සම ආයුෂ ලකුණු", note: "දෙදෙනාටම එකම ආයුෂ ලකුණු." };
-  const longerIsGirl = girlToBoy < boyToGirl; // book: smaller remainder = longer life
+  const equal = girlToBoy === boyToGirl;
+  const longerIsGirl = girlToBoy < boyToGirl;
   return {
-    label: longerIsGirl ? "ස්ත්‍රියගේ ආයුෂ ලකුණු වැඩි" : "පුරුෂයාගේ ආයුෂ ලකුණු වැඩි",
-    note: "මෙය ජීවිත කාලය සැසඳීමකි — පොරොන්දම් ලකුණු එකතුවට එකතු කර නැත."
+    score: equal ? 2 : 1,
+    max: 2,
+    label: equal ? "සම ආයුෂ ලකුණු" : (longerIsGirl ? "ස්ත්‍රියගේ ආයුෂ ලකුණු වැඩි" : "පුරුෂයාගේ ආයුෂ ලකුණු වැඩි")
   };
 }
 
@@ -218,8 +270,10 @@ function calculatePorondam(boy, girl) {
   const pakshi = pakshiScore(nakBoy.id, nakGirl.id);
   const bhuta = bhutaScore(nakBoy.id, nakGirl.id);
   const gothra = gothraScore(nakBoy.id, nakGirl.id);
+  const linga = lingaScore(nakBoy.linga, nakGirl.linga);
+  const ayush = ayushScore(nakBoy.id, nakGirl.id);
   const dina = dinaScore(boy.birthDate, girl.birthDate); // null if no birthDate on either side
-  const ayush = ayushInfo(nakBoy.id, nakGirl.id); // info-only, not scored
+  const graha = grahaScore(boy.graha, girl.graha); // null if no grahaSputa saved on either side
 
   const factors = [
     { key: "gana",         nameSi: "ගණ පොරොන්දම",           ...gana },
@@ -237,9 +291,12 @@ function calculatePorondam(boy, girl) {
     { key: "streeDeergha", nameSi: "ස්ත්‍රී දීර්ඝ පොරොන්දම", ...streeDeergha },
     { key: "pakshi",       nameSi: "පක්ෂි පොරොන්දම",         ...pakshi },
     { key: "bhuta",        nameSi: "භූත පොරොන්දම",           ...bhuta },
-    { key: "gothra",       nameSi: "ගෝත්‍ර පොරොන්දම",        ...gothra }
+    { key: "gothra",       nameSi: "ගෝත්‍ර පොරොන්දම",        ...gothra },
+    { key: "linga",        nameSi: "ලිංග පොරොන්දම",          ...linga },
+    { key: "ayush",        nameSi: "ආයුෂ පොරොන්දම",          ...ayush }
   ];
   if (dina) factors.push({ key: "dina", nameSi: "දින පොරොන්දම", ...dina });
+  if (graha) factors.push({ key: "graha", nameSi: "ග්‍රහ පොරොන්දම", ...graha });
 
   const totalScore = factors.reduce((s, f) => s + f.score, 0);
   const totalMax = factors.reduce((s, f) => s + f.max, 0);
@@ -253,6 +310,7 @@ function calculatePorondam(boy, girl) {
   if (vedha.score === 0) doshas.push("වේධ දෝෂය");
   if (bhuta.score === 0) doshas.push("භූත දෝෂය");
   if (pakshi.score === 0) doshas.push("පක්ෂි විරෝධය");
+  if (linga.score === 0) doshas.push("ලිංග අගුහය");
 
   return {
     totalScore,
@@ -262,7 +320,6 @@ function calculatePorondam(boy, girl) {
     matchedCount: factors.filter(f => f.score === f.max).length,
     factorCount: factors.length,
     factors,
-    doshas,
-    ayush // { label, note } — info-only, render separately from the scored table
+    doshas
   };
 }
