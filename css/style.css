@@ -338,6 +338,7 @@ button, .btn {
 }
 
 .percent-card { display: flex; align-items: center; gap: 20px; }
+.percent-ring-col { display: flex; flex-direction: column; align-items: center; gap: 8px; flex-shrink: 0; }
 .ring-lg { width: 96px; height: 96px; flex-shrink: 0; font-size: 1.3rem; }
 .ring-lg::before { inset: 8px; }
 .percent-label { color: var(--ivory-dim); font-size: 0.92rem; margin-bottom: 4px; }
@@ -838,11 +839,12 @@ body.menu-open .wrap {
 .btn-danger { background: var(--rose); color: #fff; }
 .btn-danger:hover { filter: brightness(1.08); }
 
-/* ---------------- match.html: "Add to favourite ❤️" toggle under the name ---------------- */
+/* ---------------- match.html: "Add to favourite" toggle under the percentage ring ---------------- */
 .fav-toggle-btn {
-  display: inline-flex; align-items: center; gap: 6px; margin-top: 12px;
-  background: transparent; border: 1px solid var(--border); color: var(--ivory);
-  padding: 8px 18px; border-radius: 999px; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: none; padding: 0; margin: 0; cursor: pointer;
+  font-family: inherit; font-size: 0.82rem; font-weight: 600; color: var(--ivory-dim);
 }
-.fav-toggle-btn:hover { border-color: var(--gold); }
-.fav-toggle-btn.active { border-color: var(--rose); color: var(--rose-text); background: rgba(var(--rose-rgb), 0.12); }
+.fav-toggle-btn:hover { color: var(--ivory); }
+.fav-heart-icon { font-size: 1rem; line-height: 1; color: var(--ivory-dim); transition: color 0.2s ease; }
+.fav-toggle-btn.active .fav-heart-icon { color: var(--rose); }
