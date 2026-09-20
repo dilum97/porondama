@@ -95,7 +95,6 @@
       content.innerHTML = `
         <div class="detail-card name-card">
           <h2 class="match-page-name">${escapeHtml(data.user.name)}</h2>
-          <button type="button" class="fav-toggle-btn" id="favToggleBtn">Add to favourite ❤️</button>
         </div>
 
         ${photos.length ? `
@@ -113,7 +112,10 @@
         </div>` : ""}
 
         <div class="detail-card percent-card">
-          <div class="ring ring-lg" style="--pct:${data.percentage};"><span>${data.percentage}%</span></div>
+          <div class="percent-ring-col">
+            <div class="ring ring-lg" style="--pct:${data.percentage};"><span>${data.percentage}%</span></div>
+            <button type="button" class="fav-toggle-btn" id="favToggleBtn"><span class="fav-heart-icon">♥</span><span class="fav-text">Add to favourite</span></button>
+          </div>
           <div class="percent-info">
             <div class="percent-label">${escapeHtml(data.user.name)} සමඟ ගැලපීම</div>
             <div class="percent-score">${data.totalScore} / ${data.totalMax} ලකුණු</div>
@@ -172,9 +174,10 @@
       // add/remove on click. Best-effort: a failure here shouldn't
       // block the rest of the page from working.
       const favBtn = document.getElementById("favToggleBtn");
+      const favText = favBtn.querySelector(".fav-text");
       let isFav = false;
       function renderFavBtn() {
-        favBtn.textContent = isFav ? "Remove from favourite ❤️" : "Add to favourite ❤️";
+        favText.textContent = isFav ? "Remove from favourite" : "Add to favourite";
         favBtn.classList.toggle("active", isFav);
       }
       try {
@@ -192,7 +195,7 @@
           }
           isFav = !isFav;
           renderFavBtn();
-        } catch (e) { /* silent — button label just won't flip */ }
+        } catch (e) { /* silent — label just won't flip */ }
         favBtn.disabled = false;
       });
     } catch (err) {
