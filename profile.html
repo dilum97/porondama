@@ -59,6 +59,7 @@
           <input type="hidden" id="lagnaRashi">
           <input type="hidden" id="nakshatra">
           <input type="hidden" id="rashi">
+          <input type="hidden" id="grahaSputa">
         </div>
       </div>
 
@@ -140,6 +141,13 @@
       : null;
     document.getElementById("lagnaRashi").value = lagnaResult ? lagnaResult.lagnaRashiId : "";
     const lagnaRashi = lagnaResult ? getRashi(lagnaResult.lagnaRashiId) : null;
+
+    // Graha Sputa (Ravi/Kuja/Budha/Guru/Sikuru/Senasuru/Rahu/Ketu
+    // positions) — only needs date+time (not birth place), used for
+    // the ග්‍රහ පොරොන්දම factor. Stashed as JSON in a hidden field the
+    // same way the other computed values are.
+    const grahaSputa = calculateGrahaSputa(birthDate, birthTime);
+    document.getElementById("grahaSputa").value = grahaSputa ? JSON.stringify(grahaSputa) : "";
     const lagnaValue = lagnaRashi
       ? lagnaRashi.si
       : `<span class="hint">ස්ථානය තෝරන්න</span>`;
@@ -187,6 +195,7 @@
           bio: document.getElementById("bio").value,
           nakshatraId: document.getElementById("nakshatra").value,
           rashiId: document.getElementById("rashi").value,
+          grahaSputa: document.getElementById("grahaSputa").value ? JSON.parse(document.getElementById("grahaSputa").value) : null,
           photoURL
         })
       });
