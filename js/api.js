@@ -311,8 +311,8 @@ async function notifyMatchesForNewProfile(uid) {
       if (!other.nakshatraId || !other.rashiId) return;
       const { boy, girl } = orderByGender(me, other);
       const result = calculatePorondam(
-        { nakshatraId: boy.nakshatraId, rashiId: boy.rashiId, birthDate: boy.birthDate },
-        { nakshatraId: girl.nakshatraId, rashiId: girl.rashiId, birthDate: girl.birthDate }
+        { nakshatraId: boy.nakshatraId, rashiId: boy.rashiId, birthDate: boy.birthDate, graha: boy.grahaSputa },
+          { nakshatraId: girl.nakshatraId, rashiId: girl.rashiId, birthDate: girl.birthDate, graha: girl.grahaSputa }
       );
       if (result.percentage < 75) return;
       const notifRef = db.collection("notifications").doc();
@@ -432,7 +432,8 @@ async function apiCall(url, options = {}) {
         height: body.height || "",
         nakshatraId: Number(body.nakshatraId),
         rashiId: Number(body.rashiId),
-        lagnaRashiId: body.lagnaRashiId ? Number(body.lagnaRashiId) : null
+        lagnaRashiId: body.lagnaRashiId ? Number(body.lagnaRashiId) : null,
+        grahaSputa: body.grahaSputa || null
       };
       if (body.photoURL) update.photoURL = body.photoURL;
       if (Array.isArray(body.photos)) {
@@ -503,8 +504,8 @@ async function apiCall(url, options = {}) {
         if (!other.nakshatraId || !other.rashiId) return;
         const { boy, girl } = orderByGender(me, other);
         const result = calculatePorondam(
-          { nakshatraId: boy.nakshatraId, rashiId: boy.rashiId, birthDate: boy.birthDate },
-          { nakshatraId: girl.nakshatraId, rashiId: girl.rashiId, birthDate: girl.birthDate }
+          { nakshatraId: boy.nakshatraId, rashiId: boy.rashiId, birthDate: boy.birthDate, graha: boy.grahaSputa },
+          { nakshatraId: girl.nakshatraId, rashiId: girl.rashiId, birthDate: girl.birthDate, graha: girl.grahaSputa }
         );
         matches.push({
           user: toPublicUser(other),
@@ -527,8 +528,8 @@ async function apiCall(url, options = {}) {
       const other = await getUserDoc(otherId);
       const { boy, girl } = orderByGender(me, other);
       const result = calculatePorondam(
-        { nakshatraId: boy.nakshatraId, rashiId: boy.rashiId, birthDate: boy.birthDate },
-        { nakshatraId: girl.nakshatraId, rashiId: girl.rashiId, birthDate: girl.birthDate }
+        { nakshatraId: boy.nakshatraId, rashiId: boy.rashiId, birthDate: boy.birthDate, graha: boy.grahaSputa },
+          { nakshatraId: girl.nakshatraId, rashiId: girl.rashiId, birthDate: girl.birthDate, graha: girl.grahaSputa }
       );
       return {
         user: toPublicUser(other),
@@ -536,8 +537,7 @@ async function apiCall(url, options = {}) {
         totalScore: result.totalScore,
         totalMax: result.totalMax,
         doshas: result.doshas,
-        factors: result.factors.map(f => ({ nameSi: f.nameSi, score: f.score, max: f.max })),
-        ayush: result.ayush
+        factors: result.factors.map(f => ({ nameSi: f.nameSi, score: f.score, max: f.max }))
       };
     }
 
@@ -556,8 +556,8 @@ async function apiCall(url, options = {}) {
         if (!other.nakshatraId || !other.rashiId || !other.photoURL) return;
         const { boy, girl } = orderByGender(me, other);
         const result = calculatePorondam(
-          { nakshatraId: boy.nakshatraId, rashiId: boy.rashiId, birthDate: boy.birthDate },
-          { nakshatraId: girl.nakshatraId, rashiId: girl.rashiId, birthDate: girl.birthDate }
+          { nakshatraId: boy.nakshatraId, rashiId: boy.rashiId, birthDate: boy.birthDate, graha: boy.grahaSputa },
+          { nakshatraId: girl.nakshatraId, rashiId: girl.rashiId, birthDate: girl.birthDate, graha: girl.grahaSputa }
         );
         if (result.percentage < 50) return;
         feed.push({
@@ -619,8 +619,8 @@ async function apiCall(url, options = {}) {
         if (me.nakshatraId && me.rashiId && other.nakshatraId && other.rashiId) {
           const { boy, girl } = orderByGender(me, other);
           percentage = calculatePorondam(
-            { nakshatraId: boy.nakshatraId, rashiId: boy.rashiId, birthDate: boy.birthDate },
-          { nakshatraId: girl.nakshatraId, rashiId: girl.rashiId, birthDate: girl.birthDate }
+            { nakshatraId: boy.nakshatraId, rashiId: boy.rashiId, birthDate: boy.birthDate, graha: boy.grahaSputa },
+          { nakshatraId: girl.nakshatraId, rashiId: girl.rashiId, birthDate: girl.birthDate, graha: girl.grahaSputa }
           ).percentage;
         }
         favorites.push({ user: toPublicUser(other), percentage });
