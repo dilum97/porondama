@@ -15,6 +15,9 @@
   --border: #1f5c3c;
   --input-bg: #062818;
   --surface-2: #123f28;
+  --rose-rgb: 181, 73, 91;
+  --rose-text: #f3c9cf;
+  --tint-bg: rgba(255,255,255,0.03);
   --radius: 14px;
 }
 
@@ -34,6 +37,9 @@ html[data-theme="blue"] {
   --border: #d8e6f5;
   --input-bg: #eef5ff;
   --surface-2: #e4eefc;
+  --rose-rgb: 196, 73, 91;
+  --rose-text: #9c2d3f;
+  --tint-bg: rgba(20, 93, 160, 0.06);
 }
 
 /* ---------------- Theme: Black & Gold ---------------- */
@@ -52,6 +58,9 @@ html[data-theme="black"] {
   --border: #2a2a2a;
   --input-bg: #141414;
   --surface-2: #1a1a1a;
+  --rose-rgb: 193, 90, 104;
+  --rose-text: #f2b9c2;
+  --tint-bg: rgba(255,255,255,0.04);
 }
 
 * { box-sizing: border-box; }
@@ -134,12 +143,12 @@ a { color: var(--gold-soft); }
 .lightbox img { max-width: 88vw; max-height: 84vh; border-radius: 10px; object-fit: contain; }
 .lightbox-close {
   position: absolute; top: 18px; right: 22px; background: transparent; border: none;
-  color: #f3efe1; font-size: 1.6rem; cursor: pointer; line-height: 1; padding: 0;
+  color: var(--ivory); font-size: 1.6rem; cursor: pointer; line-height: 1; padding: 0;
   display: flex; align-items: center; justify-content: center;
 }
 .lightbox-nav {
   position: absolute; top: 50%; transform: translateY(-50%); background: rgba(4,33,26,0.6);
-  border: none; color: #f3efe1; font-size: 2rem; width: 46px; height: 46px; border-radius: 50%;
+  border: none; color: var(--ivory); font-size: 2rem; width: 46px; height: 46px; border-radius: 50%;
   cursor: pointer; line-height: 1; padding: 0;
   display: flex; align-items: center; justify-content: center;
 }
@@ -203,7 +212,7 @@ button, .btn {
 .btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--ivory); }
 .link-line { text-align: center; margin-top: 18px; font-size: 0.9rem; color: var(--ivory-dim); }
 
-.error-box { background: rgba(181,73,91,0.15); border: 1px solid var(--rose); color: #f3c9cf; padding: 10px 14px; border-radius: 8px; font-size: 0.88rem; margin-top: 14px; }
+.error-box { background: rgba(var(--rose-rgb),0.15); border: 1px solid var(--rose); color: var(--rose-text); padding: 10px 14px; border-radius: 8px; font-size: 0.88rem; margin-top: 14px; }
 
 .auth-divider { display: flex; align-items: center; gap: 12px; margin: 18px 0; color: var(--ivory-dim); font-size: 0.82rem; }
 .auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
@@ -262,7 +271,7 @@ button, .btn {
 .ring span { position: relative; z-index: 1; color: var(--gold-soft); }
 .match-name { font-family: 'Noto Serif Sinhala', serif; font-size: 1.1rem; color: var(--ivory); margin: 0 0 4px; }
 .match-meta { color: var(--ivory-dim); font-size: 0.85rem; }
-.dosha-tag { display: inline-block; margin-top: 6px; font-size: 0.75rem; padding: 2px 8px; border-radius: 20px; background: rgba(181,73,91,0.18); color: #f3c9cf; margin-right: 6px; }
+.dosha-tag { display: inline-block; margin-top: 6px; font-size: 0.75rem; padding: 2px 8px; border-radius: 20px; background: rgba(var(--rose-rgb),0.18); color: var(--rose-text); margin-right: 6px; }
 
 .detail-btn { color: var(--gold-soft); background: transparent; border: 1px solid var(--border); }
 
@@ -315,10 +324,10 @@ button, .btn {
 }
 .carousel-arrow {
   position: absolute; top: 50%; transform: translateY(-50%); background: rgba(4,33,26,0.55);
-  border: none; color: #f3efe1; font-size: 1.8rem; width: 40px; height: 40px; border-radius: 50%;
-  cursor: pointer; line-height: 1; padding: 0; display: flex; align-items: center; justify-content: center;
+  border: none; color: var(--ivory); font-size: 1.8rem; width: 40px; height: 40px; border-radius: 50%;
+  cursor: pointer; line-height: 1; display: flex; align-items: center; justify-content: center;
 }
-.carousel-arrow:hover { background: rgba(4,33,26,0.85); color: #fccb50; }
+.carousel-arrow:hover { background: rgba(4,33,26,0.85); color: var(--gold-soft); }
 .carousel-arrow-left { left: 12px; }
 .carousel-arrow-right { right: 12px; }
 .carousel-dots { position: absolute; bottom: 12px; left: 0; right: 0; display: flex; justify-content: center; gap: 6px; }
@@ -504,7 +513,7 @@ button, .btn {
 .chat-header-link .conv-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------------- selection (mark) mode bar ---------------- */
-.chat-select-bar { display: none; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: rgba(181,73,91,0.08); }
+.chat-select-bar { display: none; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: rgba(var(--rose-rgb),0.08); }
 .chat-select-bar.active { display: flex; }
 .chat-select-bar .sel-count { flex: 1; color: var(--ivory); font-size: 0.92rem; }
 .chat-select-bar button { background: transparent; border: 1px solid var(--border); color: var(--ivory); border-radius: 8px; padding: 7px 12px; font-size: 0.85rem; cursor: pointer; font-family: inherit; }
@@ -560,7 +569,7 @@ img {
 
 /* ---------------- customer support button (Settings tab) ---------------- */
 .btn-support {
-  background: #14140f; color: #f0ece0; border: 1px solid #2a2a22;
+  background: #14140f; color: var(--ivory); border: 1px solid #2a2a22;
 }
 .btn-support:hover { background: #1c1c15; }
 
@@ -607,7 +616,7 @@ img {
 }
 .panchanga-card {
   flex: 1 1 0; min-width: 92px; padding: 14px 10px; border-radius: var(--radius);
-  text-align: center; border: 1px solid var(--border); background: rgba(255,255,255,0.03);
+  text-align: center; border: 1px solid var(--border); background: var(--tint-bg);
 }
 .panchanga-card .pc-label {
   display: block; font-size: 0.7rem; color: var(--ivory-dim); margin-bottom: 5px;
@@ -622,8 +631,8 @@ img {
 .panchanga-card.pc-lagna .pc-value { color: var(--gold-soft); }
 .panchanga-card.pc-nakshatra { border-color: var(--good); background: rgba(95, 209, 196, 0.12); }
 .panchanga-card.pc-nakshatra .pc-value { color: var(--good); }
-.panchanga-card.pc-rashi { border-color: var(--rose); background: rgba(181, 73, 91, 0.14); }
-.panchanga-card.pc-rashi .pc-value { color: #ef94a3; }
+.panchanga-card.pc-rashi { border-color: var(--rose); background: rgba(var(--rose-rgb), 0.14); }
+.panchanga-card.pc-rashi .pc-value { color: var(--rose-text); }
 .request-detail-photos { display: flex; gap: 10px; flex-wrap: wrap; }
 .request-detail-photos img {
   width: 140px; height: 140px; object-fit: cover; border-radius: 12px; border: 1px solid var(--border);
@@ -752,7 +761,7 @@ body.menu-open .wrap {
 
 .day-info-banner {
   max-height: 0; opacity: 0; overflow: hidden;
-  background: rgba(255,255,255,0.03);
+  background: var(--tint-bg);
   border-top: 1px solid transparent; border-bottom: 1px solid transparent;
   transition: max-height 0.35s cubic-bezier(0.22,0.61,0.36,1), opacity 0.3s ease, border-color 0.3s ease;
 }
@@ -829,14 +838,11 @@ body.menu-open .wrap {
 .btn-danger { background: var(--rose); color: #fff; }
 .btn-danger:hover { filter: brightness(1.08); }
 
-/* ---------------- match.html: favorite (bookmark) toggle — sits in the percent-card ---------------- */
+/* ---------------- match.html: "Add to favourite ❤️" toggle under the name ---------------- */
 .fav-toggle-btn {
-  background: rgba(4,33,26,0.55); border: none; padding: 0;
-  width: 38px; height: 38px; border-radius: 50%; cursor: pointer; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1.2rem; line-height: 1;
-  filter: grayscale(1) opacity(0.6);
-  transition: filter 0.15s ease, background 0.15s ease;
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 12px;
+  background: transparent; border: 1px solid var(--border); color: var(--ivory);
+  padding: 8px 18px; border-radius: 999px; font-size: 0.85rem; font-weight: 600; cursor: pointer;
 }
-.fav-toggle-btn:hover { background: rgba(4,33,26,0.8); }
-.fav-toggle-btn.active { filter: none; }
+.fav-toggle-btn:hover { border-color: var(--gold); }
+.fav-toggle-btn.active { border-color: var(--rose); color: var(--rose-text); background: rgba(var(--rose-rgb), 0.12); }
