@@ -123,7 +123,7 @@
         </div>
 
         <div class="detail-card porondam-card">
-          <h3 class="card-title">පොරොන්දම් 13 ගැලපීම</h3>
+          <h3 class="card-title">පොරොන්දම් ${totalFactors} ගැලපීම</h3>
           <table class="factor-table">
             <thead><tr><th>පොරොන්දම</th><th>ලකුණු</th><th style="width:40%;"></th></tr></thead>
             <tbody>
@@ -137,10 +137,11 @@
             </tbody>
           </table>
           <div class="porondam-summary">
-            <div class="porondam-summary-label">13 න් ගැලපෙන පොරොන්දම්: <b>${matchedCount} / ${totalFactors}</b></div>
+            <div class="porondam-summary-label">${totalFactors} න් ගැලපෙන පොරොන්දම්: <b>${matchedCount} / ${totalFactors}</b></div>
             <div class="bar-bg lg"><div class="bar-fill" style="width:${(matchedCount / totalFactors) * 100}%;"></div></div>
           </div>
           ${data.doshas.length ? `<div class="porondam-doshas">${data.doshas.map(d => `<span class="dosha-tag">${escapeHtml(d)}</span>`).join("")}</div>` : ""}
+          ${data.ayush ? `<div class="ayush-info-tag" style="margin-top:10px;font-size:.9em;opacity:.85;">ℹ️ ${escapeHtml(data.ayush.label)} — ${escapeHtml(data.ayush.note)}</div>` : ""}
         </div>
 
         ${(data.user.education || data.user.profession || data.user.birthPlace || data.user.religion || data.user.ethnicity || data.user.height || age != null || data.user.bio) ? `
