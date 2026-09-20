@@ -95,6 +95,7 @@
       content.innerHTML = `
         <div class="detail-card name-card">
           <h2 class="match-page-name">${escapeHtml(data.user.name)}</h2>
+          <button type="button" class="fav-toggle-btn" id="favToggleBtn">Add to favourite ❤️</button>
         </div>
 
         ${photos.length ? `
@@ -117,7 +118,6 @@
             <div class="percent-label">${escapeHtml(data.user.name)} සමඟ ගැලපීම</div>
             <div class="percent-score">${data.totalScore} / ${data.totalMax} ලකුණු</div>
           </div>
-          <button type="button" class="fav-toggle-btn" id="favToggleBtn" aria-label="Favorites">❤️</button>
         </div>
 
         <div class="detail-card porondam-card">
@@ -173,11 +173,15 @@
       // block the rest of the page from working.
       const favBtn = document.getElementById("favToggleBtn");
       let isFav = false;
+      function renderFavBtn() {
+        favBtn.textContent = isFav ? "Remove from favourite ❤️" : "Add to favourite ❤️";
+        favBtn.classList.toggle("active", isFav);
+      }
       try {
         const { ids } = await apiCall("/api/favorites/ids");
         isFav = ids.includes(id);
-        favBtn.classList.toggle("active", isFav);
-      } catch (e) { /* not logged in edge-case etc — leave heart outlined */ }
+        renderFavBtn();
+      } catch (e) { /* not logged in edge-case etc — leave default label */ }
       favBtn.addEventListener("click", async () => {
         favBtn.disabled = true;
         try {
@@ -187,8 +191,8 @@
             await apiCall("/api/favorites/" + id, { method: "POST" });
           }
           isFav = !isFav;
-          favBtn.classList.toggle("active", isFav);
-        } catch (e) { /* silent — heart state just won't flip */ }
+          renderFavBtn();
+        } catch (e) { /* silent — button label just won't flip */ }
         favBtn.disabled = false;
       });
     } catch (err) {
