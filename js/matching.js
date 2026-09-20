@@ -6,12 +6,12 @@
  * Mid-migration from the original 8-factor Vedic Ashtakoota-style
  * engine to the traditional Sri Lankan "Porondam 20" system — see
  * the migration-status note at the top of data/reference.js for
- * which factors are done vs still pending (14. ආයුෂ, 15. පක්ෂි,
- * 16. භූත, 17. ගෝත්‍ර, 18. දින, 19-20. ග්‍රහ are not implemented yet;
- * this file currently computes the other 13). This is a simplified/
- * approximate implementation for a fun pre-screen tool — NOT a
- * substitute for a full reading by a qualified astrologer. That
- * disclaimer is already shown on match.html; keep it there.
+ * which factors are done vs still pending (17 of 20 scored + ආයුෂ
+ * as an info-only tag; ලිංග and ග්‍රහ are not implemented — see that
+ * file for why). This is a simplified/approximate implementation for
+ * a fun pre-screen tool — NOT a substitute for a full reading by a
+ * qualified astrologer. That disclaimer is already shown on
+ * match.html; keep it there.
  *
  * Depends on: data/reference.js (getNakshatra, getRashi, YONI_ENEMIES,
  * VEDHA_PAIRS, LORD_RELATION) being loaded first.
@@ -133,9 +133,60 @@ function streeDeerghaScore(nakDistGirlToBoy) {
   return nakDistGirlToBoy > 14 ? { score: 2, max: 2 } : { score: 0, max: 2 };
 }
 
+function pakshiScore(nakIdA, nakIdB) {
+  const a = pakshiOf(nakIdA), b = pakshiOf(nakIdB);
+  const key = a <= b ? `${a}-${b}` : `${b}-${a}`;
+  const rel = PAKSHI_RELATION[key] !== undefined ? PAKSHI_RELATION[key] : 1;
+  return { score: rel, max: 2 };
+}
+
+function bhutaScore(nakIdA, nakIdB) {
+  const a = bhutaOf(nakIdA), b = bhutaOf(nakIdB);
+  const key = a <= b ? `${a}-${b}` : `${b}-${a}`;
+  const rel = BUTHA_RELATION[key] !== undefined ? BUTHA_RELATION[key] : 1;
+  return { score: rel, max: 2 };
+}
+
+function gothraScore(nakIdA, nakIdB) {
+  const ga = gothraOf(nakIdA), gb = gothraOf(nakIdB);
+  // Only a real dosha when both share the *same named* (non-default)
+  // gothra; a shared default ("සාමාන්ය") isn't the same koota concern.
+  const sameNamed = ga === gb && ga !== "සාමාන්ය";
+  return { score: sameNamed ? 0 : 1, max: 1 };
+}
+
+// Ch.18: weekday-counting rule, counted from the girl's day of week.
+// Same day, or 1-4 days after = auspicious; 5-6 days after = not.
+// birthDateStr: "YYYY-MM-DD". Returns null (factor skipped) if either
+// birth date is missing — can't be guessed.
+function dinaScore(boyBirthDateStr, girlBirthDateStr) {
+  if (!boyBirthDateStr || !girlBirthDateStr) return null;
+  const boyDay = new Date(boyBirthDateStr + "T00:00:00").getDay();
+  const girlDay = new Date(girlBirthDateStr + "T00:00:00").getDay();
+  if (isNaN(boyDay) || isNaN(girlDay)) return null;
+  const diff = (boyDay - girlDay + 7) % 7; // 0 = same day
+  const bad = diff === 5 || diff === 6;
+  return { score: bad ? 0 : 2, max: 2 };
+}
+
+// Ch.12: Ayush (life-span) koota — informational only, NOT added to
+// the total score (Dilum's call: it's a comparison, not pass/fail).
+// Classical method: count nakshatra-to-nakshatra (inclusive) each
+// direction, add 27, then reduce mod 28 (0 -> treated as 28).
+function ayushInfo(nakIdA, nakIdB) {
+  const girlToBoy = ((nakshatraDistance(nakIdA, nakIdB) + 27 - 1) % 28) + 1;
+  const boyToGirl = ((nakshatraDistance(nakIdB, nakIdA) + 27 - 1) % 28) + 1;
+  if (girlToBoy === boyToGirl) return { label: "සම ආයුෂ ලකුණු", note: "දෙදෙනාටම එකම ආයුෂ ලකුණු." };
+  const longerIsGirl = girlToBoy < boyToGirl; // book: smaller remainder = longer life
+  return {
+    label: longerIsGirl ? "ස්ත්‍රියගේ ආයුෂ ලකුණු වැඩි" : "පුරුෂයාගේ ආයුෂ ලකුණු වැඩි",
+    note: "මෙය ජීවිත කාලය සැසඳීමකි — පොරොන්දම් ලකුණු එකතුවට එකතු කර නැත."
+  };
+}
+
 /**
- * @param {{nakshatraId:number, rashiId:number}} boy
- * @param {{nakshatraId:number, rashiId:number}} girl
+ * @param {{nakshatraId:number, rashiId:number, birthDate?:string}} boy
+ * @param {{nakshatraId:number, rashiId:number, birthDate?:string}} girl
  */
 function calculatePorondam(boy, girl) {
   const nakBoy = getNakshatra(boy.nakshatraId);
@@ -164,6 +215,11 @@ function calculatePorondam(boy, girl) {
   const vruksha = vrukshaScore(nakBoy.vruksha, nakGirl.vruksha);
   const mahendra = mahendraScore(nDistGirlToBoy);
   const streeDeergha = streeDeerghaScore(nDistGirlToBoy);
+  const pakshi = pakshiScore(nakBoy.id, nakGirl.id);
+  const bhuta = bhutaScore(nakBoy.id, nakGirl.id);
+  const gothra = gothraScore(nakBoy.id, nakGirl.id);
+  const dina = dinaScore(boy.birthDate, girl.birthDate); // null if no birthDate on either side
+  const ayush = ayushInfo(nakBoy.id, nakGirl.id); // info-only, not scored
 
   const factors = [
     { key: "gana",         nameSi: "ගණ පොරොන්දම",           ...gana },
@@ -178,8 +234,12 @@ function calculatePorondam(boy, girl) {
     { key: "vedha",        nameSi: "වේධ පොරොන්දම",          ...vedha },
     { key: "vruksha",      nameSi: "වෘක්ෂ පොරොන්දම",        ...vruksha },
     { key: "mahendra",     nameSi: "මහේන්ද්‍ර පොරොන්දම",    ...mahendra },
-    { key: "streeDeergha", nameSi: "ස්ත්‍රී දීර්ඝ පොරොන්දම", ...streeDeergha }
+    { key: "streeDeergha", nameSi: "ස්ත්‍රී දීර්ඝ පොරොන්දම", ...streeDeergha },
+    { key: "pakshi",       nameSi: "පක්ෂි පොරොන්දම",         ...pakshi },
+    { key: "bhuta",        nameSi: "භූත පොරොන්දම",           ...bhuta },
+    { key: "gothra",       nameSi: "ගෝත්‍ර පොරොන්දම",        ...gothra }
   ];
+  if (dina) factors.push({ key: "dina", nameSi: "දින පොරොන්දම", ...dina });
 
   const totalScore = factors.reduce((s, f) => s + f.score, 0);
   const totalMax = factors.reduce((s, f) => s + f.max, 0);
@@ -191,6 +251,8 @@ function calculatePorondam(boy, girl) {
   if (gana.score <= 1) doshas.push("ගණ විරෝධය");
   if (rajju.score === 0) doshas.push("රජ්ජු දෝෂය");
   if (vedha.score === 0) doshas.push("වේධ දෝෂය");
+  if (bhuta.score === 0) doshas.push("භූත දෝෂය");
+  if (pakshi.score === 0) doshas.push("පක්ෂි විරෝධය");
 
   return {
     totalScore,
@@ -200,6 +262,7 @@ function calculatePorondam(boy, girl) {
     matchedCount: factors.filter(f => f.score === f.max).length,
     factorCount: factors.length,
     factors,
-    doshas
+    doshas,
+    ayush // { label, note } — info-only, render separately from the scored table
   };
 }
