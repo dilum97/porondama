@@ -72,7 +72,75 @@ function calculateNakshatraRashi(birthDateStr, birthTimeStr) {
   };
 }
 
-// Lagna (Ascendant) — the sidereal rashi rising on the eastern
+// --- Graha Sputa (planetary positions) — for ග්‍රහ පොරොන්දම (ch.20) --
+//
+// astronomy-engine (vendored) already computes geocentric position for
+// Sun/Mercury/Venus/Mars/Jupiter/Saturn the same way it's used for the
+// Moon above: Astronomy.GeoVector(body, date, aberration) gives the
+// geocentric vector, Astronomy.Ecliptic(vector).elon gives the
+// tropical ecliptic longitude from it. Same Lahiri ayanamsa
+// conversion, same 30°-per-rashi slicing as everything else here.
+//
+// Rahu/Ketu (lunar nodes) aren't a "body" the library tracks as a
+// position, so those use the standard mean-node formula (Meeus,
+// "Astronomical Algorithms" ch.47): a slow, well-known polynomial in
+// T = Julian centuries since J2000 TT. Ketu is always exactly 180°
+// from Rahu.
+function meanLunarNodeTropicalDegrees(astroTime) {
+  const T = astroTime.tt / 36525;
+  const omega = 125.0445222 - 1934.1362608 * T + 0.0020708 * T * T + (T * T * T) / 450000;
+  return normalizeDegrees(omega);
+}
+
+const GRAHA_BODIES = {
+  ravi: "Sun", kuja: "Mars", budha: "Mercury",
+  guru: "Jupiter", sikuru: "Venus", senasuru: "Saturn"
+};
+
+function siderealToRashi(siderealLon) {
+  const rashiIndex = Math.floor(siderealLon / 30);
+  return { rashiId: rashiIndex + 1, degreeInRashi: siderealLon % 30 };
+}
+
+// birthDateStr/birthTimeStr: same as calculateNakshatraRashi.
+// Returns { chandra, ravi, kuja, budha, guru, sikuru, senasuru, rahu,
+// ketu } — each { rashiId, degreeInRashi, siderealLongitude } — or
+// null if the inputs aren't usable yet. Doesn't need birth place
+// (unlike Lagna): planetary ecliptic longitude is the same seen from
+// anywhere on Earth (only the *rising point*/Lagna is location-
+// dependent).
+function calculateGrahaSputa(birthDateStr, birthTimeStr) {
+  const moon = calculateNakshatraRashi(birthDateStr, birthTimeStr);
+  if (!moon) return null;
+
+  const dateParts = birthDateStr.split("-").map(Number);
+  const timeParts = birthTimeStr.split(":").map(Number);
+  const [y, m, d] = dateParts;
+  const [hh, mm] = timeParts;
+  const localAsUtc = Date.UTC(y, m - 1, d, hh, mm, 0);
+  const utcInstant = new Date(localAsUtc - SL_UTC_OFFSET_MINUTES * 60000);
+  const astroTime = Astronomy.MakeTime(utcInstant);
+  const ayanamsa = lahiriAyanamsaDegrees(astroTime);
+
+  const result = {
+    chandra: { rashiId: moon.rashiId, degreeInRashi: moon.siderealLongitude % 30, siderealLongitude: moon.siderealLongitude }
+  };
+
+  for (const [key, bodyName] of Object.entries(GRAHA_BODIES)) {
+    const geoVector = Astronomy.GeoVector(Astronomy.Body[bodyName], utcInstant, true);
+    const tropicalLon = Astronomy.Ecliptic(geoVector).elon;
+    const siderealLon = normalizeDegrees(tropicalLon - ayanamsa);
+    result[key] = { ...siderealToRashi(siderealLon), siderealLongitude: siderealLon };
+  }
+
+  const rahuTropical = meanLunarNodeTropicalDegrees(astroTime);
+  const rahuSidereal = normalizeDegrees(rahuTropical - ayanamsa);
+  const ketuSidereal = normalizeDegrees(rahuSidereal + 180);
+  result.rahu = { ...siderealToRashi(rahuSidereal), siderealLongitude: rahuSidereal };
+  result.ketu = { ...siderealToRashi(ketuSidereal), siderealLongitude: ketuSidereal };
+
+  return result;
+}
 // horizon at the moment of birth. Unlike Rashi above (which comes
 // from the Moon's position and only needs date+time), this needs the
 // birth place's latitude/longitude too, because the same moment
