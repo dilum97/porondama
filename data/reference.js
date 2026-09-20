@@ -10,28 +10,44 @@
  * ====================================================================
  * The site is being converted from the original 8-factor Vedic
  * Ashtakoota-style engine to the traditional Sri Lankan "Porondam 20"
- * system. Progress so far — 13 of 20 factors implemented:
+ * system, sourced from a photographed printed jyotisha reference book
+ * (chapter "පොරොන්දම් පරීක්ෂාව", pages 163-170 + the නැකැත් ගණ යෝති
+ * ව්‍යක්ෂාදි වකුය table, page 37).
  *
- *   ✅ Implemented (web-cross-checked against 2+ independent sources):
- *      1. නැකත් (tara/star count)   8. රජ්ජු        11. වේධ
- *      2. ගණ                        9. වශ්‍ය         12. වෘක්ෂ
- *      3. යෝනි                     10. වර්ණ
- *      4. රාශි                     13. නාඩි
- *      5. රාශ්‍යාධිපති
- *      6. මහේන්ද්‍ර
+ *   ✅ Implemented from the book (13 original + 4 new = 17 of 20):
+ *      1. නැකත් (tara/star)   8. රජ්ජු         14. පක්ෂි (bird)
+ *      2. ගණ                  9. වශ්‍ය          15. භූත (element)
+ *      3. යෝනි                10. වර්ණ          16. ගෝත්‍ර (minor)
+ *      4. රාශි                11. වේධ           17. දින (weekday)
+ *      5. රාශ්‍යාධිපති        12. වෘක්ෂ
+ *      6. මහේන්ද්‍ර            13. නාඩි
  *      7. ස්ත්‍රී දීර්ඝ
  *
- *   ⏳ NOT yet implemented — deliberately left out rather than
- *      guessed, because reliable sources conflicted or were missing
- *      (an AI-generated "reference" was cross-checked and rejected —
- *      see chat history). Waiting on a photographed page from a
- *      printed porondam/jyotisha reference book:
- *      14. ආයුෂ   15. පක්ෂි   16. භූත   17. ගෝත්‍ර
- *      18. ලිංග   19. දින    20. ග්‍රහ
- *      (Note: list numbering above is for tracking only, not the
- *      canonical Porondam-20 order. ලිංග — male/female/neuter
- *      nature per nakshatra — hasn't been researched at all yet;
- *      it's not just missing a table, it's missing entirely.)
+ *   ℹ️ ආයුෂ (18) — implemented but shown as an INFO tag, not scored
+ *      into the total (per Dilum's own call — it's a life-span
+ *      comparison, not a pass/fail porondam). See ayushInfo().
+ *
+ *   ⏳ Still NOT implemented — 2 of 20:
+ *      19. ලිංග — the book's page 167 paragraph on this is garbled/
+ *          contradictory in the photo (lists both "same-gender best"
+ *          and "same-gender worst" cases in the same paragraph).
+ *          Rather than guess which reading is right, this is left out
+ *          until a clearer photo of that paragraph is available.
+ *      20. ග්‍රහ — the book's rules (page 169-170) need each person's
+ *          actual planetary positions (Kuja/Sikuru/Guru etc. sputas
+ *          and their trikona/kendra aspects to each other), not just
+ *          Moon-derived nakshatra/rashi. This site's panchanga.js only
+ *          computes the Moon's position, so there's no data to score
+ *          this against — would need a full 9-planet ephemeris engine
+ *          first (much bigger job than a lookup table).
+ *
+ *   ⚠️ VARNA DISCREPANCY — the book's varna column (page 37) uses a
+ *      6-category repeating cycle (බ්‍රාහ්මණ/ක්ෂත්‍රිය/වෛශ්‍ය/ශුද්‍ර/
+ *      පංචම/සංකර, cycling every 6 nakshatra) which does NOT match the
+ *      4-category varna values already in NAKSHATRAS below (from the
+ *      original web-cross-check). They disagree on most nakshatra.
+ *      Left the existing values untouched rather than silently
+ *      overwrite them — flag for Dilum to decide which source wins.
  *
  * ====================================================================
  * NAKSHATRA/RASHI/LAGNA AUTO-CALCULATION (see js/panchanga.js)
@@ -111,6 +127,59 @@ const NAKSHATRAS = [
   { id: 26, en: "Uttara Bhadrapada", si: "උත්‍රපුටුප", gana: 2, nadi: 3, yoni: 4,  varna: 2, rajju: 2, vruksha: "hara" },
   { id: 27, en: "Revati",            si: "රේවතී",      gana: 1, nadi: 1, yoni: 2,  varna: 4, rajju: 1, vruksha: "kiri" }
 ];
+
+// --- Porondam-20 additions from the book (page 37 table + ch.13-18) --
+//
+// Pakshi (bird) and Butha (element) are each assigned to nakshatra in
+// five clean, contiguous ranges — the book's table only prints a new
+// name where the group changes (1, 6, 12, 17, 23), leaving the rest
+// blank/carried-forward, which is why these are ranges rather than a
+// per-nakshatra table like the others.
+function pakshiOf(nakId) {
+  if (nakId <= 5) return 1;   // රාජාලියා (eagle)  — 1-5
+  if (nakId <= 11) return 2;  // බකමුණා (owl)      — 6-11
+  if (nakId <= 16) return 3;  // කපුටා (crow)      — 12-16
+  if (nakId <= 22) return 4;  // කුකුළා (rooster)  — 17-22
+  return 5;                   // මොණරා (peacock)   — 23-27
+}
+const PAKSHI_NAMES = { 1: "රාජාලියා", 2: "බකමුණා", 3: "කපුටා", 4: "කුකුළා", 5: "මොණරා" };
+// Ch.13 friend/enemy statements, resolved into one symmetric table.
+// 2=friend/same-species, 1=neutral(සම), 0=enemy(සතුරු)
+const PAKSHI_RELATION = {
+  "1-1": 2, "2-2": 2, "3-3": 2, "4-4": 2, "5-5": 2,
+  "1-2": 0, "1-4": 0, "1-5": 0, "1-3": 1,
+  "2-4": 0, "2-5": 0, "2-3": 0,
+  "4-5": 2, "3-5": 2,
+  "3-4": 1
+};
+
+function bhutaOf(nakId) {
+  if (nakId <= 5) return 1;   // පෘථිවි (earth) — 1-5
+  if (nakId <= 11) return 2;  // ආපෝ (water)    — 6-11
+  if (nakId <= 16) return 3;  // තේජෝ (fire)    — 12-16
+  if (nakId <= 22) return 4;  // වායෝ (air)     — 17-22
+  return 5;                   // ආකාශ (space)   — 23-27
+}
+const BUTHA_NAMES = { 1: "පෘථිවි", 2: "ආපෝ", 3: "තේජෝ", 4: "වායෝ", 5: "ආකාශ" };
+// Ch.14 statements. Pairs the book doesn't explicitly mention
+// (earth-water, earth-air, water-space) are marked neutral(1) rather
+// than guessed good/bad.
+const BUTHA_RELATION = {
+  "1-1": 2, "2-2": 2, "3-3": 2, "4-4": 2, "5-5": 2,
+  "1-3": 0, "1-5": 0,
+  "2-3": 0,
+  "2-4": 1,
+  "3-4": 2, "3-5": 2,
+  "4-5": 2,
+  "1-2": 1, "1-4": 1, "2-5": 1
+};
+
+// Gothra (ch.15) — book's own text calls this a minor/non-essential
+// porondam. The table only names a gothra for 5 of the 27 nakshatra
+// (5, 9, 13, 17, 21); the rest share an unnamed/common gothra. Rule:
+// same gothra = inauspicious, different = fine.
+const GOTHRA_BY_NAK = { 5: "අති", 9: "වශිෂ්ට", 13: "අංගිර", 17: "පුලස්ති", 21: "පුලග" };
+function gothraOf(nakId) { return GOTHRA_BY_NAK[nakId] || "සාමාන්ය"; }
 
 // Vedha (nakshatra "enmity") pairs — standard Vedic vedha-koota table,
 // each pair mutually inauspicious. Dhanishtha (23) has no vedha partner.
