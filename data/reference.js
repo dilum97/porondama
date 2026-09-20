@@ -14,40 +14,20 @@
  * (chapter "පොරොන්දම් පරීක්ෂාව", pages 163-170 + the නැකැත් ගණ යෝති
  * ව්‍යක්ෂාදි වකුය table, page 37).
  *
- *   ✅ Implemented from the book (13 original + 4 new = 17 of 20):
+ *   ✅ Implemented from the book (all 20 of 20, ග්‍රහ simplified — see
+ *      matching.js's grahaScore() comment for what's left out of it):
  *      1. නැකත් (tara/star)   8. රජ්ජු         14. පක්ෂි (bird)
  *      2. ගණ                  9. වශ්‍ය          15. භූත (element)
  *      3. යෝනි                10. වර්ණ          16. ගෝත්‍ර (minor)
  *      4. රාශි                11. වේධ           17. දින (weekday)
- *      5. රාශ්‍යාධිපති        12. වෘක්ෂ
- *      6. මහේන්ද්‍ර            13. නාඩි
- *      7. ස්ත්‍රී දීර්ඝ
+ *      5. රාශ්‍යාධිපති        12. වෘක්ෂ         18. ආයුෂ (life-span)
+ *      6. මහේන්ද්‍ර            13. නාඩි          19. ලිංග (gender-type)
+ *      7. ස්ත්‍රී දීර්ඝ                          20. ග්‍රහ (planetary)
  *
- *   ℹ️ ආයුෂ (18) — implemented but shown as an INFO tag, not scored
- *      into the total (per Dilum's own call — it's a life-span
- *      comparison, not a pass/fail porondam). See ayushInfo().
- *
- *   ⏳ Still NOT implemented — 2 of 20:
- *      19. ලිංග — the book's page 167 paragraph on this is garbled/
- *          contradictory in the photo (lists both "same-gender best"
- *          and "same-gender worst" cases in the same paragraph).
- *          Rather than guess which reading is right, this is left out
- *          until a clearer photo of that paragraph is available.
- *      20. ග්‍රහ — the book's rules (page 169-170) need each person's
- *          actual planetary positions (Kuja/Sikuru/Guru etc. sputas
- *          and their trikona/kendra aspects to each other), not just
- *          Moon-derived nakshatra/rashi. This site's panchanga.js only
- *          computes the Moon's position, so there's no data to score
- *          this against — would need a full 9-planet ephemeris engine
- *          first (much bigger job than a lookup table).
- *
- *   ⚠️ VARNA DISCREPANCY — the book's varna column (page 37) uses a
- *      6-category repeating cycle (බ්‍රාහ්මණ/ක්ෂත්‍රිය/වෛශ්‍ය/ශුද්‍ර/
- *      පංචම/සංකර, cycling every 6 nakshatra) which does NOT match the
- *      4-category varna values already in NAKSHATRAS below (from the
- *      original web-cross-check). They disagree on most nakshatra.
- *      Left the existing values untouched rather than silently
- *      overwrite them — flag for Dilum to decide which source wins.
+ *   ✅ VARNA — updated to the book's 6-category cycle (page 37):
+ *      බ්‍රාහ්මණ/ක්ෂත්‍රිය/වෛශ්‍ය/ශුද්‍ර/පංචම/සංකර, repeating every 6
+ *      nakshatra. Replaces the earlier 4-category web-cross-checked
+ *      values (Dilum's call — the physical book wins over web sources).
  *
  * ====================================================================
  * NAKSHATRA/RASHI/LAGNA AUTO-CALCULATION (see js/panchanga.js)
@@ -87,7 +67,13 @@
 // nadi: 1=Adi, 2=Madhya, 3=Antya
 // yoni: animal id, 1-14 (see YONI_LIST below) — matched pairs share
 //       an id or a "friendly" pairing in YONI_COMPAT
-// varna: 1=Brahmin(highest) .. 4=Shudra — boy's varna >= girl's is ideal
+// varna: 1=Brahmin .. 6=Sankara (book's 6-category cycle, page 37;
+//        repeats every 6 nakshatra: Brahmin/Kshatriya/Vaishya/Shudra/
+//        Panchama/Sankara) — lower number = higher rank. Ch.16 rule:
+//        same varna = very good; boy's rank <= girl's = good;
+//        girl's rank higher than boy's = very bad.
+// linga: "M"(පුරුෂ)/"F"(ස්ත්‍රී)/"N"(නපුංසක) — gender-type of the
+//        nakshatra itself (page 37, col.5). Ch.17 rule below.
 // rajju: 1=Pada, 2=Ooru, 3=Nabhi, 4=Bahu, 5=Shira — same rajju group
 //        between boy/girl is "රජ්ජු දෝෂය" (inauspicious). Source:
 //        web-cross-checked, groups of 6/6/6/6/3 covering all 27 nakshatra.
@@ -99,33 +85,33 @@ const YONI_LIST = [
 ];
 
 const NAKSHATRAS = [
-  { id: 1,  en: "Ashwini",           si: "අස්විද",     gana: 1, nadi: 1, yoni: 1,  varna: 3, rajju: 1, vruksha: "hara" },
-  { id: 2,  en: "Bharani",           si: "බෙරණ",       gana: 2, nadi: 2, yoni: 2,  varna: 4, rajju: 2, vruksha: "hara" },
-  { id: 3,  en: "Krittika",          si: "කැති",       gana: 3, nadi: 3, yoni: 3,  varna: 1, rajju: 3, vruksha: "hara" },
-  { id: 4,  en: "Rohini",            si: "රෙහෙන",      gana: 2, nadi: 2, yoni: 4,  varna: 4, rajju: 4, vruksha: "hara" },
-  { id: 5,  en: "Mrigashira",        si: "රිකිරි",     gana: 1, nadi: 3, yoni: 4,  varna: 3, rajju: 5, vruksha: "hara" },
-  { id: 6,  en: "Ardra",             si: "අද",         gana: 2, nadi: 1, yoni: 5,  varna: 4, rajju: 4, vruksha: "hara" },
-  { id: 7,  en: "Punarvasu",         si: "පුනාවස",     gana: 1, nadi: 2, yoni: 6,  varna: 3, rajju: 3, vruksha: "hara" },
-  { id: 8,  en: "Pushya",            si: "පුස",        gana: 1, nadi: 3, yoni: 14, varna: 2, rajju: 2, vruksha: "kiri" },
-  { id: 9,  en: "Ashlesha",          si: "අස්ලිස",     gana: 3, nadi: 1, yoni: 6,  varna: 4, rajju: 1, vruksha: "kiri" },
-  { id: 10, en: "Magha",             si: "මා",         gana: 3, nadi: 2, yoni: 7,  varna: 4, rajju: 1, vruksha: "kiri" },
-  { id: 11, en: "Purva Phalguni",    si: "පුවපල්",     gana: 2, nadi: 3, yoni: 7,  varna: 1, rajju: 2, vruksha: "kiri" },
-  { id: 12, en: "Uttara Phalguni",   si: "උත්‍රපල්",   gana: 2, nadi: 1, yoni: 9,  varna: 2, rajju: 3, vruksha: "kiri" },
-  { id: 13, en: "Hasta",             si: "හත",         gana: 1, nadi: 2, yoni: 9,  varna: 3, rajju: 4, vruksha: "hara" },
-  { id: 14, en: "Chitra",            si: "සිත",        gana: 3, nadi: 3, yoni: 10, varna: 4, rajju: 5, vruksha: "hara" },
-  { id: 15, en: "Swati",             si: "සා",         gana: 1, nadi: 1, yoni: 9,  varna: 4, rajju: 4, vruksha: "hara" },
-  { id: 16, en: "Vishakha",          si: "විසා",       gana: 3, nadi: 2, yoni: 10, varna: 4, rajju: 3, vruksha: "hara" },
-  { id: 17, en: "Anuradha",          si: "අනුර",       gana: 1, nadi: 3, yoni: 11, varna: 4, rajju: 2, vruksha: "hara" },
-  { id: 18, en: "Jyeshtha",          si: "දෙට",        gana: 3, nadi: 1, yoni: 11, varna: 2, rajju: 1, vruksha: "kiri" },
-  { id: 19, en: "Mula",              si: "මුල",        gana: 3, nadi: 2, yoni: 5,  varna: 4, rajju: 1, vruksha: "kiri" },
-  { id: 20, en: "Purva Ashadha",     si: "පුවසල",      gana: 2, nadi: 3, yoni: 12, varna: 1, rajju: 2, vruksha: "hara" },
-  { id: 21, en: "Uttara Ashadha",    si: "උත්‍රසල",    gana: 2, nadi: 1, yoni: 13, varna: 2, rajju: 3, vruksha: "kiri" },
-  { id: 22, en: "Shravana",          si: "සුවන",       gana: 1, nadi: 2, yoni: 12, varna: 4, rajju: 4, vruksha: "kiri" },
-  { id: 23, en: "Dhanishtha",        si: "දෙනට",       gana: 3, nadi: 3, yoni: 8,  varna: 4, rajju: 4, vruksha: "hara" },
-  { id: 24, en: "Shatabhisha",       si: "සතබිස",      gana: 3, nadi: 1, yoni: 1,  varna: 4, rajju: 5, vruksha: "hara" },
-  { id: 25, en: "Purva Bhadrapada",  si: "පුවපුටුප",   gana: 2, nadi: 2, yoni: 8,  varna: 1, rajju: 3, vruksha: "kiri" },
-  { id: 26, en: "Uttara Bhadrapada", si: "උත්‍රපුටුප", gana: 2, nadi: 3, yoni: 4,  varna: 2, rajju: 2, vruksha: "hara" },
-  { id: 27, en: "Revati",            si: "රේවතී",      gana: 1, nadi: 1, yoni: 2,  varna: 4, rajju: 1, vruksha: "kiri" }
+  { id: 1,  en: "Ashwini",           si: "අස්විද",     gana: 1, nadi: 1, yoni: 1,  varna: 1, linga: "M", rajju: 1, vruksha: "hara" },
+  { id: 2,  en: "Bharani",           si: "බෙරණ",       gana: 2, nadi: 2, yoni: 2,  varna: 2, linga: "M", rajju: 2, vruksha: "hara" },
+  { id: 3,  en: "Krittika",          si: "කැති",       gana: 3, nadi: 3, yoni: 3,  varna: 3, linga: "F", rajju: 3, vruksha: "hara" },
+  { id: 4,  en: "Rohini",            si: "රෙහෙන",      gana: 2, nadi: 2, yoni: 4,  varna: 4, linga: "M", rajju: 4, vruksha: "hara" },
+  { id: 5,  en: "Mrigashira",        si: "රිකිරි",     gana: 1, nadi: 3, yoni: 4,  varna: 5, linga: "N", rajju: 5, vruksha: "hara" },
+  { id: 6,  en: "Ardra",             si: "අද",         gana: 2, nadi: 1, yoni: 5,  varna: 6, linga: "M", rajju: 4, vruksha: "hara" },
+  { id: 7,  en: "Punarvasu",         si: "පුනාවස",     gana: 1, nadi: 2, yoni: 6,  varna: 1, linga: "M", rajju: 3, vruksha: "hara" },
+  { id: 8,  en: "Pushya",            si: "පුස",        gana: 1, nadi: 3, yoni: 14, varna: 2, linga: "M", rajju: 2, vruksha: "kiri" },
+  { id: 9,  en: "Ashlesha",          si: "අස්ලිස",     gana: 3, nadi: 1, yoni: 6,  varna: 3, linga: "F", rajju: 1, vruksha: "kiri" },
+  { id: 10, en: "Magha",             si: "මා",         gana: 3, nadi: 2, yoni: 7,  varna: 4, linga: "M", rajju: 1, vruksha: "kiri" },
+  { id: 11, en: "Purva Phalguni",    si: "පුවපල්",     gana: 2, nadi: 3, yoni: 7,  varna: 5, linga: "F", rajju: 2, vruksha: "kiri" },
+  { id: 12, en: "Uttara Phalguni",   si: "උත්‍රපල්",   gana: 2, nadi: 1, yoni: 9,  varna: 6, linga: "F", rajju: 3, vruksha: "kiri" },
+  { id: 13, en: "Hasta",             si: "හත",         gana: 1, nadi: 2, yoni: 9,  varna: 1, linga: "F", rajju: 4, vruksha: "hara" },
+  { id: 14, en: "Chitra",            si: "සිත",        gana: 3, nadi: 3, yoni: 10, varna: 2, linga: "M", rajju: 5, vruksha: "hara" },
+  { id: 15, en: "Swati",             si: "සා",         gana: 1, nadi: 1, yoni: 9,  varna: 3, linga: "M", rajju: 4, vruksha: "hara" },
+  { id: 16, en: "Vishakha",          si: "විසා",       gana: 3, nadi: 2, yoni: 10, varna: 4, linga: "F", rajju: 3, vruksha: "hara" },
+  { id: 17, en: "Anuradha",          si: "අනුර",       gana: 1, nadi: 3, yoni: 11, varna: 5, linga: "F", rajju: 2, vruksha: "hara" },
+  { id: 18, en: "Jyeshtha",          si: "දෙට",        gana: 3, nadi: 1, yoni: 11, varna: 6, linga: "M", rajju: 1, vruksha: "kiri" },
+  { id: 19, en: "Mula",              si: "මුල",        gana: 3, nadi: 2, yoni: 5,  varna: 1, linga: "N", rajju: 1, vruksha: "kiri" },
+  { id: 20, en: "Purva Ashadha",     si: "පුවසල",      gana: 2, nadi: 3, yoni: 12, varna: 2, linga: "F", rajju: 2, vruksha: "hara" },
+  { id: 21, en: "Uttara Ashadha",    si: "උත්‍රසල",    gana: 2, nadi: 1, yoni: 13, varna: 3, linga: "F", rajju: 3, vruksha: "kiri" },
+  { id: 22, en: "Shravana",          si: "සුවන",       gana: 1, nadi: 2, yoni: 12, varna: 4, linga: "M", rajju: 4, vruksha: "kiri" },
+  { id: 23, en: "Dhanishtha",        si: "දෙනට",       gana: 3, nadi: 3, yoni: 8,  varna: 5, linga: "F", rajju: 4, vruksha: "hara" },
+  { id: 24, en: "Shatabhisha",       si: "සතබිස",      gana: 3, nadi: 1, yoni: 1,  varna: 6, linga: "N", rajju: 5, vruksha: "hara" },
+  { id: 25, en: "Purva Bhadrapada",  si: "පුවපුටුප",   gana: 2, nadi: 2, yoni: 8,  varna: 1, linga: "M", rajju: 3, vruksha: "kiri" },
+  { id: 26, en: "Uttara Bhadrapada", si: "උත්‍රපුටුප", gana: 2, nadi: 3, yoni: 4,  varna: 2, linga: "M", rajju: 2, vruksha: "hara" },
+  { id: 27, en: "Revati",            si: "රේවතී",      gana: 1, nadi: 1, yoni: 2,  varna: 3, linga: "F", rajju: 1, vruksha: "kiri" }
 ];
 
 // --- Porondam-20 additions from the book (page 37 table + ch.13-18) --
@@ -180,6 +166,19 @@ const BUTHA_RELATION = {
 // same gothra = inauspicious, different = fine.
 const GOTHRA_BY_NAK = { 5: "අති", 9: "වශිෂ්ට", 13: "අංගිර", 17: "පුලස්ති", 21: "පුලග" };
 function gothraOf(nakId) { return GOTHRA_BY_NAK[nakId] || "සාමාන්ය"; }
+
+// Linga (ch.17) — ordered pair (boy's linga, girl's linga), per
+// Dilum's clarified text of the paragraph:
+//   girl=F & boy=M (natural)      -> itha shuba (2)
+//   both F                        -> shuba (2)
+//   one F & one N (either order)  -> madhyama (1)
+//   both M, both N, boy=F&girl=M
+//   (swapped), or one M & one N   -> itha ashuba (0)
+const LINGA_RELATION = {
+  "M-F": 2, "F-F": 2,
+  "F-N": 1, "N-F": 1,
+  "M-M": 0, "N-N": 0, "F-M": 0, "M-N": 0, "N-M": 0
+};
 
 // Vedha (nakshatra "enmity") pairs — standard Vedic vedha-koota table,
 // each pair mutually inauspicious. Dhanishtha (23) has no vedha partner.
