@@ -6,9 +6,12 @@
 <title>Admin · Porondama</title>
 <link rel="icon" href="img/icon-192.png">
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#04211a">
+<meta name="theme-color" content="#0b0d12">
 <link rel="stylesheet" href="css/style.css">
 <script src="js/theme.js"></script>
+<!-- Admin pages are always dark, whatever theme the member site uses.
+     (Does not change the saved member theme.) -->
+<script>document.documentElement.setAttribute("data-theme", "admin");</script>
 </head>
 <body>
 <div class="topbar">
@@ -30,8 +33,10 @@
   <div class="admin-subnav">
     <button type="button" class="active" data-view="active">Active Members <span class="count" id="countActive"></span></button>
     <button type="button" data-view="requests">Requests <span class="count" id="countRequests"></span></button>
+    <button type="button" data-view="photos">Photo Reviews <span class="count" id="countPhotos"></span></button>
     <button type="button" data-view="online">Online <span class="count" id="countOnline"></span></button>
     <button type="button" data-view="messages">Messages <span class="count" id="countMessages"></span></button>
+    <button type="button" data-view="broadcast">Broadcast</button>
   </div>
 
   <!-- ============ ACTIVE MEMBERS ============ -->
@@ -43,6 +48,17 @@
   <!-- ============ PENDING REQUESTS ============ -->
   <div class="admin-view" id="view-requests" style="display:none;">
     <div id="requestsList" class="admin-list"><div class="empty-state">Loading...</div></div>
+  </div>
+
+  <!-- ============ PHOTO REVIEWS ============ -->
+  <!-- New gallery photos uploaded by already-approved members wait here.
+       Nothing shows on the member's public profile until approved. -->
+  <div class="admin-view" id="view-photos" style="display:none;">
+    <div class="section-title" style="margin-top:0;">
+      <span class="hint">Photos members uploaded after being approved — review each one before it goes live.</span>
+      <button type="button" class="btn btn-secondary" id="refreshPhotosBtn" style="width:auto; padding:7px 14px; font-size:0.82rem;">Refresh</button>
+    </div>
+    <div id="photoQueue"><div class="empty-state">Loading...</div></div>
   </div>
 
   <!-- ============ ONLINE NOW ============ -->
@@ -72,27 +88,18 @@
       </div>
     </div>
   </div>
-</div>
 
-<!-- ============ REQUEST DETAIL MODAL ============ -->
-<!-- Opened by clicking a name in the pending-requests list. Shows
-     the full profile this person submitted for review, with a large
-     photo, before the admin decides to approve/reject. -->
-<div id="requestModal" class="modal-overlay" style="display:none;">
-  <div class="modal-card">
-    <button type="button" class="modal-close-btn" id="requestModalCloseBtn">✕</button>
-    <div id="requestModalBody"></div>
-  </div>
-</div>
-
-<!-- ============ MEMBER DETAIL MODAL ============ -->
-<!-- Opened by clicking a name in the Active Members list or the
-     Online list. Shows that member's full profile plus Chat /
-     Disable / Delete actions. -->
-<div id="memberModal" class="modal-overlay" style="display:none;">
-  <div class="modal-card">
-    <button type="button" class="modal-close-btn" id="memberModalCloseBtn">✕</button>
-    <div id="memberModalBody"></div>
+  <!-- ============ BROADCAST ============ -->
+  <div class="admin-view" id="view-broadcast" style="display:none;">
+    <div class="admin-panel-card">
+      <h3>Send a notification to everyone</h3>
+      <p class="hint">Goes to every registered member (approved, pending and incomplete accounts). They see it in their notifications tab.</p>
+      <textarea id="broadcastText" class="admin-textarea" maxlength="500" placeholder="Write your message..."></textarea>
+      <div class="char-count"><span id="broadcastCount">0</span> / 500</div>
+      <div class="admin-actions" style="margin-top:12px;">
+        <button type="button" class="btn btn-primary" id="broadcastSendBtn" style="margin-top:0;">Send to all members</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -105,37 +112,16 @@
 <script src="js/image-compress.js"></script>
 <script src="js/cloudinary.js"></script>
 <script src="js/api.js"></script>
+<script src="js/admin-common.js"></script>
 <script>
-  function escapeHtml(s) {
-    const div = document.createElement("div");
-    div.textContent = s == null ? "" : s;
-    return div.innerHTML;
-  }
-
-  function timeAgo(ts) {
-    if (!ts || !ts.toDate) return "";
-    const diffMs = Date.now() - ts.toDate().getTime();
-    const mins = Math.floor(diffMs / 60000);
-    if (mins < 1) return "just now";
-    if (mins < 60) return mins + "m ago";
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return hrs + "h ago";
-    return Math.floor(hrs / 24) + "d ago";
-  }
-
-  // "Online" = a presence heartbeat (see updateLastSeen() in api.js,
-  // called every 30s from dashboard.html) seen within the last 2 min.
-  const ONLINE_WINDOW_MS = 2 * 60 * 1000;
-  function isOnline(u) {
-    if (!u.lastSeen || !u.lastSeen.toDate) return false;
-    return (Date.now() - u.lastSeen.toDate().getTime()) < ONLINE_WINDOW_MS;
-  }
+  // escapeHtml / timeAgo / isOnline / nakshatraName / askAdminText /
+  // openAdminLightbox / adminToast all live in js/admin-common.js
 
   let allUsers = [];
   let allRequests = [];
 
   // ---------------- sub-nav ----------------
-  const views = ["active", "requests", "online", "messages"];
+  const views = ["active", "requests", "photos", "online", "messages", "broadcast"];
   function showView(name) {
     views.forEach(v => {
       document.getElementById("view-" + v).style.display = v === name ? "block" : "none";
@@ -149,14 +135,24 @@
     btn.addEventListener("click", () => showView(btn.dataset.view));
   });
 
+  // Every member/request name opens the full per-user page.
+  window.openUserPage = function (id, from) {
+    location.href = "admin-user.html?id=" + encodeURIComponent(id) + "&from=" + encodeURIComponent(from);
+  };
+
+  function pendingPhotoCount(u) {
+    return Array.isArray(u.pendingPhotos) ? u.pendingPhotos.length : 0;
+  }
+
   // ---------------- active members ----------------
   function renderActive(filterText) {
     const list = document.getElementById("adminList");
     const q = (filterText || "").trim().toLowerCase();
     const rows = q ? allUsers.filter(u => u.name.toLowerCase().includes(q)) : allUsers;
 
+    const photosWaiting = allUsers.reduce((n, u) => n + pendingPhotoCount(u), 0);
     document.getElementById("statsHint").textContent =
-      `${allUsers.length} active members · ${allUsers.filter(u => u.disabled).length} disabled`;
+      `${allUsers.length} active members · ${allUsers.filter(u => u.disabled).length} disabled · ${photosWaiting} photo(s) awaiting review`;
     document.getElementById("countActive").textContent = allUsers.length;
     document.getElementById("countOnline").textContent = allUsers.filter(isOnline).length;
 
@@ -169,12 +165,12 @@
       <div class="admin-row ${u.disabled ? 'disabled' : ''}">
         ${u.photoURL ? `<img class="conv-avatar" src="${escapeHtml(u.photoURL)}" alt="">` : `<div class="conv-avatar"></div>`}
         <div class="admin-row-info">
-          <div class="conv-name request-name-link" onclick="openMemberDetail('${u.id}')">${isOnline(u) ? '<span class="online-dot"></span>' : ''}${escapeHtml(u.name)}</div>
-          <div class="conv-last">${escapeHtml(u.gender || '')}${u.birthPlace ? ' · ' + escapeHtml(u.birthPlace) : ''}${u.disabled ? ' <span class="dosha-tag">Disabled</span>' : ''}</div>
+          <div class="conv-name request-name-link" onclick="openUserPage('${u.id}', 'active')">${isOnline(u) ? '<span class="online-dot"></span>' : ''}${escapeHtml(u.name)}</div>
+          <div class="conv-last">${escapeHtml(u.gender || '')}${u.birthPlace ? ' · ' + escapeHtml(u.birthPlace) : ''}${u.disabled ? ' <span class="status-pill bad">Disabled</span>' : ''}${pendingPhotoCount(u) ? ` <span class="status-pill warn">${pendingPhotoCount(u)} photo(s) to review</span>` : ''}</div>
         </div>
         <div class="admin-row-actions">
           <button class="btn btn-secondary" onclick="toggleDisabled('${u.id}', ${!u.disabled})">${u.disabled ? 'Enable' : 'Disable'}</button>
-          <button class="btn detail-btn" style="border-color:var(--rose); color:var(--rose);" onclick="deleteUser('${u.id}','${escapeHtml(u.name)}')">Delete</button>
+          <button class="btn btn-danger" onclick="deleteUser('${u.id}','${escapeHtml(u.name)}')">Delete</button>
         </div>
       </div>
     `).join("");
@@ -185,7 +181,6 @@
       await apiCall("/api/admin/users/" + id, { method: "PUT", body: JSON.stringify({ disabled }) });
       const u = allUsers.find(x => x.id === id);
       if (u) u.disabled = disabled;
-      closeMemberModal();
       renderActive(document.getElementById("searchInput").value);
     } catch (err) {
       alert(err.message);
@@ -197,8 +192,9 @@
     try {
       await apiCall("/api/admin/users/" + id, { method: "DELETE" });
       allUsers = allUsers.filter(x => x.id !== id);
-      closeMemberModal();
       renderActive(document.getElementById("searchInput").value);
+      renderPhotoQueue();
+      renderOnline();
     } catch (err) {
       alert(err.message);
     }
@@ -210,14 +206,15 @@
     try {
       const { users } = await apiCall("/api/admin/users");
       allUsers = users;
-      renderActive("");
+      renderActive(document.getElementById("searchInput").value);
       renderOnline();
+      renderPhotoQueue();
     } catch (err) {
       document.getElementById("adminList").innerHTML = `<div class="error-box">${escapeHtml(err.message)}</div>`;
     }
   }
 
-  // ---------------- pending requests ----------------
+  // ---------------- pending registration requests ----------------
   function renderRequests() {
     document.getElementById("countRequests").textContent = allRequests.length;
     const list = document.getElementById("requestsList");
@@ -225,166 +222,21 @@
       list.innerHTML = `<div class="empty-state">No new requests.</div>`;
       return;
     }
-    // List row only: name, gender, age — click the name to open the
-    // full submitted-profile card (photo, kendara details, etc).
+    // List row only: name, gender, age — click the name to open that
+    // person's full page (photos, kendara details, approve/reject).
     list.innerHTML = allRequests.map(r => {
       const age = calculateAge(r.birthDate);
       return `
       <div class="admin-row" style="grid-template-columns: auto 1fr;">
         ${r.photoURL ? `<img class="conv-avatar" src="${escapeHtml(r.photoURL)}" alt="">` : `<div class="conv-avatar"></div>`}
         <div class="admin-row-info">
-          <div class="conv-name request-name-link" onclick="openRequestDetail('${r.id}')">${escapeHtml(r.name || '(No name)')}</div>
+          <div class="conv-name request-name-link" onclick="openUserPage('${r.id}', 'requests')">${escapeHtml(r.name || '(No name)')}</div>
           <div class="conv-last">${escapeHtml(r.gender === 'male' ? 'Male' : r.gender === 'female' ? 'Female' : '')}${age != null ? ' · Age ' + age : ''}</div>
         </div>
       </div>
     `;
     }).join("");
   }
-
-  function nakshatraName(id) {
-    const n = (typeof NAKSHATRAS !== "undefined" ? NAKSHATRAS : []).find(x => x.id === Number(id));
-    return n ? (n.en || n.si) : null;
-  }
-  function rashiName(id) {
-    const r = (typeof RASHIS !== "undefined" ? RASHIS : []).find(x => x.id === Number(id));
-    return r ? (r.en || r.si) : null;
-  }
-
-  window.openRequestDetail = function (id) {
-    const r = allRequests.find(x => x.id === id);
-    if (!r) return;
-    const age = calculateAge(r.birthDate);
-    const photos = r.photos && r.photos.length ? r.photos : (r.photoURL ? [r.photoURL] : []);
-    document.getElementById("requestModalBody").innerHTML = `
-      ${photos.length ? `
-        <div class="request-detail-photos">
-          ${photos.map(p => `<img src="${escapeHtml(p)}" alt="">`).join("")}
-        </div>` : `<div class="empty-state" style="padding:20px 0;">No photo</div>`}
-      <h2 style="margin: 14px 0 2px;">${escapeHtml(r.name || '(No name)')}</h2>
-      <div class="hint" style="margin-bottom:16px;">${r.usernameLower ? '@' + escapeHtml(r.usernameLower) : ''}</div>
-      <div class="profile-grid" style="margin-bottom:18px;">
-        ${r.gender ? `<div class="k">Gender</div><div class="v">${r.gender === 'male' ? 'Male' : 'Female'}</div>` : ""}
-        ${age != null ? `<div class="k">Age</div><div class="v">${age}</div>` : ""}
-        ${r.birthDate ? `<div class="k">Birth Date</div><div class="v">${escapeHtml(r.birthDate)}</div>` : ""}
-        ${r.birthTime ? `<div class="k">Birth Time</div><div class="v">${escapeHtml(r.birthTime)}</div>` : ""}
-        ${r.birthPlace ? `<div class="k">Birth Place</div><div class="v">${escapeHtml(r.birthPlace)}</div>` : ""}
-        ${r.lagnaRashiId ? `<div class="k">Lagna</div><div class="v">${escapeHtml(rashiName(r.lagnaRashiId) || r.lagnaRashiId)}</div>` : ""}
-        ${r.nakshatraId ? `<div class="k">Nakshatra</div><div class="v">${escapeHtml(nakshatraName(r.nakshatraId) || r.nakshatraId)}</div>` : ""}
-        ${r.rashiId ? `<div class="k">Rashi</div><div class="v">${escapeHtml(rashiName(r.rashiId) || r.rashiId)}</div>` : ""}
-        ${r.height ? `<div class="k">Height</div><div class="v">${escapeHtml(r.height)} cm</div>` : ""}
-        ${r.religion ? `<div class="k">Religion</div><div class="v">${escapeHtml(r.religion)}</div>` : ""}
-        ${r.ethnicity ? `<div class="k">Ethnicity</div><div class="v">${escapeHtml(r.ethnicity)}</div>` : ""}
-        ${r.education ? `<div class="k">Education</div><div class="v">${escapeHtml(r.education)}</div>` : ""}
-        ${r.profession ? `<div class="k">Profession</div><div class="v">${escapeHtml(r.profession)}</div>` : ""}
-      </div>
-      ${r.bio ? `<p style="color:var(--ivory); font-size:0.92rem; margin-bottom:18px;">${escapeHtml(r.bio)}</p>` : ""}
-      ${(r.facebook || r.whatsapp) ? `
-        <div style="display:flex; gap:10px; margin-bottom:18px; flex-wrap:wrap;">
-          ${r.facebook ? `<a class="btn btn-secondary" style="width:auto;" href="${escapeHtml(r.facebook)}" target="_blank" rel="noopener noreferrer">Facebook Profile</a>` : ""}
-          ${r.whatsapp ? `<a class="btn btn-secondary" style="width:auto;" href="https://wa.me/${escapeHtml(r.whatsapp.replace(/[^0-9]/g, ''))}" target="_blank" rel="noopener noreferrer">WhatsApp</a>` : ""}
-        </div>` : ""}
-      <div class="admin-row-actions" style="grid-column: 1 / -1; display:flex; gap:10px;">
-        <button class="btn btn-primary" style="margin-top:0;" onclick="approveRequest('${r.id}','${escapeHtml(r.name)}')">Approve</button>
-        <button class="btn detail-btn" style="border-color:var(--rose); color:var(--rose);" onclick="rejectRequest('${r.id}','${escapeHtml(r.name)}')">Reject</button>
-      </div>
-    `;
-    document.getElementById("requestModal").style.display = "flex";
-  };
-
-  function closeRequestModal() {
-    document.getElementById("requestModal").style.display = "none";
-  }
-  document.getElementById("requestModalCloseBtn").addEventListener("click", closeRequestModal);
-  document.getElementById("requestModal").addEventListener("click", (e) => {
-    if (e.target.id === "requestModal") closeRequestModal();
-  });
-
-  // ---------------- member detail modal (Active + Online lists) ----------------
-  // Same look as the request-review card, but for an already-approved
-  // member: shows their full profile plus Chat / Disable / Delete.
-  window.openMemberDetail = function (id) {
-    const u = allUsers.find(x => x.id === id);
-    if (!u) return;
-    const age = calculateAge(u.birthDate);
-    const photos = u.photos && u.photos.length ? u.photos : (u.photoURL ? [u.photoURL] : []);
-    document.getElementById("memberModalBody").innerHTML = `
-      ${photos.length ? `
-        <div class="request-detail-photos">
-          ${photos.map(p => `<img src="${escapeHtml(p)}" alt="">`).join("")}
-        </div>` : `<div class="empty-state" style="padding:20px 0;">No photo</div>`}
-      <h2 style="margin: 14px 0 2px;">${isOnline(u) ? '<span class="online-dot"></span>' : ''}${escapeHtml(u.name || '(No name)')} ${u.disabled ? '<span class="dosha-tag">Disabled</span>' : ''}</h2>
-      <div class="hint" style="margin-bottom:16px;">${u.usernameLower ? '@' + escapeHtml(u.usernameLower) : ''}</div>
-      <div class="profile-grid" style="margin-bottom:18px;">
-        ${u.gender ? `<div class="k">Gender</div><div class="v">${u.gender === 'male' ? 'Male' : 'Female'}</div>` : ""}
-        ${age != null ? `<div class="k">Age</div><div class="v">${age}</div>` : ""}
-        ${u.birthDate ? `<div class="k">Birth Date</div><div class="v">${escapeHtml(u.birthDate)}</div>` : ""}
-        ${u.birthTime ? `<div class="k">Birth Time</div><div class="v">${escapeHtml(u.birthTime)}</div>` : ""}
-        ${u.birthPlace ? `<div class="k">Birth Place</div><div class="v">${escapeHtml(u.birthPlace)}</div>` : ""}
-        ${u.lagnaRashiId ? `<div class="k">Lagna</div><div class="v">${escapeHtml(rashiName(u.lagnaRashiId) || u.lagnaRashiId)}</div>` : ""}
-        ${u.nakshatraId ? `<div class="k">Nakshatra</div><div class="v">${escapeHtml(nakshatraName(u.nakshatraId) || u.nakshatraId)}</div>` : ""}
-        ${u.rashiId ? `<div class="k">Rashi</div><div class="v">${escapeHtml(rashiName(u.rashiId) || u.rashiId)}</div>` : ""}
-        ${u.height ? `<div class="k">Height</div><div class="v">${escapeHtml(u.height)} cm</div>` : ""}
-        ${u.religion ? `<div class="k">Religion</div><div class="v">${escapeHtml(u.religion)}</div>` : ""}
-        ${u.ethnicity ? `<div class="k">Ethnicity</div><div class="v">${escapeHtml(u.ethnicity)}</div>` : ""}
-        ${u.education ? `<div class="k">Education</div><div class="v">${escapeHtml(u.education)}</div>` : ""}
-        ${u.profession ? `<div class="k">Profession</div><div class="v">${escapeHtml(u.profession)}</div>` : ""}
-      </div>
-      ${u.bio ? `<p style="color:var(--ivory); font-size:0.92rem; margin-bottom:18px;">${escapeHtml(u.bio)}</p>` : ""}
-      ${(u.facebook || u.whatsapp) ? `
-        <div style="display:flex; gap:10px; margin-bottom:18px; flex-wrap:wrap;">
-          ${u.facebook ? `<a class="btn btn-secondary" style="width:auto;" href="${escapeHtml(u.facebook)}" target="_blank" rel="noopener noreferrer">Facebook Profile</a>` : ""}
-          ${u.whatsapp ? `<a class="btn btn-secondary" style="width:auto;" href="https://wa.me/${escapeHtml(u.whatsapp.replace(/[^0-9]/g, ''))}" target="_blank" rel="noopener noreferrer">WhatsApp</a>` : ""}
-        </div>` : ""}
-      <div class="admin-row-actions" style="grid-column: 1 / -1; display:flex; gap:10px; flex-wrap:wrap;">
-        <button class="btn btn-primary" style="margin-top:0; width:auto;" onclick="chatWithMember('${u.id}','${escapeHtml(u.name)}','${escapeHtml(u.photoURL || '')}')">Chat</button>
-        <button class="btn btn-secondary" style="width:auto;" onclick="toggleDisabled('${u.id}', ${!u.disabled})">${u.disabled ? 'Enable' : 'Disable'}</button>
-        <button class="btn detail-btn" style="width:auto; border-color:var(--rose); color:var(--rose);" onclick="deleteUser('${u.id}','${escapeHtml(u.name)}')">Delete</button>
-      </div>
-    `;
-    document.getElementById("memberModal").style.display = "flex";
-  };
-
-  function closeMemberModal() {
-    document.getElementById("memberModal").style.display = "none";
-  }
-  document.getElementById("memberModalCloseBtn").addEventListener("click", closeMemberModal);
-  document.getElementById("memberModal").addEventListener("click", (e) => {
-    if (e.target.id === "memberModal") closeMemberModal();
-  });
-
-  // Jumps to the Messages tab and opens (or starts) a chat with this
-  // member — reuses the exact same conversation system as the
-  // member-to-member Messages tab.
-  window.chatWithMember = function (id, name, photoURL) {
-    closeMemberModal();
-    showView("messages");
-    openAdminChat(id, name, photoURL);
-  };
-
-  window.approveRequest = async function (id, name) {
-    if (!confirm(`Approve ${name} and add them to the site?`)) return;
-    try {
-      await apiCall("/api/admin/requests/" + id + "/approve", { method: "PUT" });
-      allRequests = allRequests.filter(x => x.id !== id);
-      closeRequestModal();
-      renderRequests();
-      loadActive();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  window.rejectRequest = async function (id, name) {
-    if (!confirm(`Reject and delete ${name}'s request?`)) return;
-    try {
-      await apiCall("/api/admin/requests/" + id, { method: "DELETE" });
-      allRequests = allRequests.filter(x => x.id !== id);
-      closeRequestModal();
-      renderRequests();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
 
   async function loadRequests() {
     try {
@@ -395,6 +247,81 @@
       document.getElementById("requestsList").innerHTML = `<div class="error-box">${escapeHtml(err.message)}</div>`;
     }
   }
+
+  // ---------------- photo reviews ----------------
+  // One card per pending photo, across all approved members.
+  function renderPhotoQueue() {
+    const box = document.getElementById("photoQueue");
+    const items = [];
+    allUsers.forEach(u => (u.pendingPhotos || []).forEach(p => items.push({ user: u, photo: p })));
+    items.sort((a, b) => (a.photo.at || 0) - (b.photo.at || 0)); // oldest first
+    document.getElementById("countPhotos").textContent = items.length;
+
+    if (items.length === 0) {
+      box.innerHTML = `<div class="empty-state">No photos waiting for review.</div>`;
+      return;
+    }
+    const urls = items.map(x => x.photo.url);
+    box.innerHTML = `<div class="admin-photo-grid">` + items.map((x, i) => `
+      <div class="admin-photo">
+        <span class="admin-photo-tag">${x.photo.type === 'cover' ? 'New cover photo' : 'Gallery'}</span>
+        <img src="${escapeHtml(x.photo.url)}" alt="" onclick="openQueueLightbox(${i})">
+        <div class="admin-photo-info">
+          <a href="#" onclick="openUserPage('${x.user.id}', 'photos'); return false;">${escapeHtml(x.user.name || '(No name)')}</a>
+          <div>${timeAgo(x.photo.at)}</div>
+        </div>
+        <div class="admin-photo-foot">
+          <button class="btn btn-primary" onclick="approvePhoto(${i})">Approve</button>
+          <button class="btn btn-danger" onclick="rejectPhoto(${i})">Reject</button>
+        </div>
+      </div>
+    `).join("") + `</div>`;
+    window._queueItems = items;
+    window._queueUrls = urls;
+  }
+
+  window.openQueueLightbox = function (i) { openAdminLightbox(window._queueUrls, i); };
+
+  window.approvePhoto = async function (i) {
+    const it = window._queueItems[i];
+    if (!it) return;
+    try {
+      await apiCall("/api/admin/photos/approve", { method: "POST", body: JSON.stringify({ userId: it.user.id, url: it.photo.url }) });
+      it.user.pendingPhotos = it.user.pendingPhotos.filter(p => p.url !== it.photo.url);
+      if (it.photo.type === "cover") { it.user.photoURL = it.photo.url; }
+      adminToast("Photo approved — " + (it.user.name || "member") + " was notified");
+      renderPhotoQueue();
+      renderActive(document.getElementById("searchInput").value);
+    } catch (err) {
+      alert(err.message);
+      loadActive();
+    }
+  };
+
+  window.rejectPhoto = async function (i) {
+    const it = window._queueItems[i];
+    if (!it) return;
+    const reason = await askAdminText({
+      title: "Reject this photo?",
+      message: "The member gets a notification. Add a reason so they know what to fix (optional).",
+      placeholder: "Reason (optional)",
+      confirmLabel: "Reject",
+      danger: true
+    });
+    if (reason === null) return;
+    try {
+      await apiCall("/api/admin/photos/reject", { method: "POST", body: JSON.stringify({ userId: it.user.id, url: it.photo.url, reason }) });
+      it.user.pendingPhotos = it.user.pendingPhotos.filter(p => p.url !== it.photo.url);
+      adminToast("Photo rejected — " + (it.user.name || "member") + " was notified");
+      renderPhotoQueue();
+      renderActive(document.getElementById("searchInput").value);
+    } catch (err) {
+      alert(err.message);
+      loadActive();
+    }
+  };
+
+  document.getElementById("refreshPhotosBtn").addEventListener("click", loadActive);
 
   // ---------------- online now ----------------
   function renderOnline() {
@@ -409,12 +336,35 @@
       <div class="admin-row" style="grid-template-columns: auto 1fr;">
         ${u.photoURL ? `<img class="conv-avatar" src="${escapeHtml(u.photoURL)}" alt="">` : `<div class="conv-avatar"></div>`}
         <div class="admin-row-info">
-          <div class="conv-name request-name-link" onclick="openMemberDetail('${u.id}')"><span class="online-dot"></span>${escapeHtml(u.name)}</div>
+          <div class="conv-name request-name-link" onclick="openUserPage('${u.id}', 'online')"><span class="online-dot"></span>${escapeHtml(u.name)}</div>
           <div class="conv-last">Active ${timeAgo(u.lastSeen)}</div>
         </div>
       </div>
     `).join("");
   }
+
+  // ---------------- broadcast ----------------
+  const broadcastText = document.getElementById("broadcastText");
+  broadcastText.addEventListener("input", () => {
+    document.getElementById("broadcastCount").textContent = broadcastText.value.length;
+  });
+  document.getElementById("broadcastSendBtn").addEventListener("click", async () => {
+    const text = broadcastText.value.trim();
+    if (!text) { broadcastText.focus(); return; }
+    if (!confirm("Send this notification to ALL registered members?\n\n" + text)) return;
+    const btn = document.getElementById("broadcastSendBtn");
+    btn.disabled = true;
+    try {
+      const res = await apiCall("/api/admin/broadcast", { method: "POST", body: JSON.stringify({ text }) });
+      broadcastText.value = "";
+      document.getElementById("broadcastCount").textContent = "0";
+      adminToast("Sent to " + res.sent + " member(s)");
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   // ---------------- support messages (admin is just another
   // participant here — reuses subscribeToConversations/Messages from
@@ -506,18 +456,29 @@
 
   // ---------------- boot ----------------
   (async () => {
-    const user = await new Promise(resolve => {
-      const unsub = auth.onAuthStateChanged(u => { unsub(); resolve(u); });
-    });
-    if (!user || user.uid !== ADMIN_UID) {
-      location.href = "admin-login.html";
-      return;
-    }
+    const user = await requireAdminOrRedirect();
+    if (!user) return;
     adminMe = user;
 
     loadActive();
     loadRequests();
     startAdminConversationsSubscription();
+
+    // Deep links from admin-user.html:
+    //   ?view=requests|photos|...  -> land on that tab
+    //   ?chat=<uid>                -> open that member's chat
+    const params = new URLSearchParams(location.search);
+    const startView = params.get("view");
+    if (startView && views.includes(startView)) showView(startView);
+    const chatId = params.get("chat");
+    if (chatId) {
+      try {
+        const { user: target } = await apiCall("/api/users/" + chatId);
+        showView("messages");
+        openAdminChat(target.id, target.name, target.photoURL);
+      } catch (err) { console.warn("could not open chat:", err); }
+    }
+    if (startView || chatId) history.replaceState({}, "", location.pathname);
   })();
 </script>
 </body>
