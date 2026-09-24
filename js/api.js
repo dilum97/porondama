@@ -180,6 +180,92 @@ function toPublicUser(u) {
   };
 }
 
+// ---- gallery photo approval helpers ------------------------------
+// Members who are already approved can no longer publish a new photo
+// on their own. A freshly uploaded photo goes into their doc's
+// `pendingPhotos` array ([{ url, type: "cover"|"gallery", at }]) and
+// only moves into the public `photos` array once the admin approves
+// it (see /api/admin/photos/* below). People who are still
+// incomplete/pending (their whole registration is being reviewed) add
+// photos directly, exactly as before.
+function needsPhotoApproval(u, uid) {
+  return !!(u && isApproved(u) && uid !== ADMIN_UID);
+}
+
+// The photos everyone can currently see for this user.
+function approvedPhotosOf(u) {
+  if (Array.isArray(u.photos) && u.photos.length) return u.photos;
+  return u.photoURL ? [u.photoURL] : [];
+}
+
+// Returns a NEW pendingPhotos array with `url` queued. Only one
+// pending cover at a time — a newer cover replaces an older one.
+function addPendingPhoto(pendingList, url, type) {
+  const t = type === "cover" ? "cover" : "gallery";
+  let list = (Array.isArray(pendingList) ? pendingList : []).filter(p => p.url !== url);
+  if (t === "cover") list = list.filter(p => p.type !== "cover");
+  list.push({ url, type: t, at: Date.now() });
+  return list;
+}
+
+const MAX_PENDING_PHOTOS = 10;
+const NOTIF_LOGO = "img/icon-192.png";
+
+// Admin -> member notification. Best-effort: a notification hiccup
+// must never make the real action (approve/remove/disable) look
+// like it failed.
+async function sendAdminNotification(targetId, type, text) {
+  try {
+    await db.collection("notifications").add({
+      userId: targetId,
+      type,
+      actorUid: ADMIN_UID,
+      subjectUid: ADMIN_UID,
+      subjectName: "Porondama",
+      subjectPhoto: NOTIF_LOGO,
+      text,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      read: false
+    });
+    return true;
+  } catch (e) {
+    console.warn("admin notification failed:", e);
+    return false;
+  }
+}
+
+// One shape for everything the admin panel shows about a member.
+function toAdminUserView(id, u) {
+  return {
+    id,
+    name: u.name || "",
+    usernameLower: u.usernameLower || "",
+    gender: u.gender || "",
+    birthDate: u.birthDate || "",
+    birthTime: u.birthTime || "",
+    birthPlace: u.birthPlace || "",
+    nakshatraId: u.nakshatraId || null,
+    rashiId: u.rashiId || null,
+    lagnaRashiId: u.lagnaRashiId || null,
+    height: u.height || "",
+    religion: u.religion || "",
+    ethnicity: u.ethnicity || "",
+    education: u.education || "",
+    profession: u.profession || "",
+    bio: u.bio || "",
+    facebook: u.facebook || "",
+    whatsapp: u.whatsapp || "",
+    photoURL: u.photoURL || "",
+    photos: Array.isArray(u.photos) ? u.photos : [],
+    pendingPhotos: Array.isArray(u.pendingPhotos) ? u.pendingPhotos : [],
+    status: u.status || "approved",
+    disabled: !!u.disabled,
+    selfDeactivated: !!u.selfDeactivated,
+    createdAt: u.createdAt || null,
+    lastSeen: u.lastSeen || null
+  };
+}
+
 // Age in whole years from a "YYYY-MM-DD" birth date string, or null
 // if the date is missing/invalid. Shared by dashboard.html and
 // match.html (both already load this file).
@@ -435,13 +521,33 @@ async function apiCall(url, options = {}) {
         lagnaRashiId: body.lagnaRashiId ? Number(body.lagnaRashiId) : null,
         grahaSputa: body.grahaSputa || null
       };
-      if (body.photoURL) update.photoURL = body.photoURL;
-      if (Array.isArray(body.photos)) {
-        update.photos = body.photos;
-        // Keep the legacy single photoURL (used in cards/rings/avatars
-        // across the app) pointed at the first gallery photo so older
-        // UI that only knows about photoURL still shows a picture.
-        if (!body.photoURL) update.photoURL = body.photos[0] || "";
+      if (needsPhotoApproval(beforeDoc, uid)) {
+        // Already-approved member: this call may only re-order/remove
+        // photos that are ALREADY approved. Any unknown URL is dropped
+        // from `photos` — new photos reach the public gallery only
+        // through the admin's approval (POST /api/me/photos/pending).
+        const approvedSet = new Set(approvedPhotosOf(beforeDoc));
+        if (Array.isArray(body.photos)) {
+          update.photos = body.photos.filter(u => approvedSet.has(u));
+          update.photoURL = update.photos[0] || "";
+        }
+        if (body.photoURL) {
+          if (approvedSet.has(body.photoURL)) {
+            update.photoURL = body.photoURL;
+          } else if (/^https:\/\/res\.cloudinary\.com\//.test(body.photoURL)) {
+            // Older single-photo form (profile.html): queue as a new cover.
+            update.pendingPhotos = addPendingPhoto(beforeDoc.pendingPhotos, body.photoURL, "cover");
+          }
+        }
+      } else {
+        if (body.photoURL) update.photoURL = body.photoURL;
+        if (Array.isArray(body.photos)) {
+          update.photos = body.photos;
+          // Keep the legacy single photoURL (used in cards/rings/avatars
+          // across the app) pointed at the first gallery photo so older
+          // UI that only knows about photoURL still shows a picture.
+          if (!body.photoURL) update.photoURL = body.photos[0] || "";
+        }
       }
 
       // submit: true — the person hit "සමාලෝචනය සඳහා යවන්න" (send for
@@ -473,6 +579,30 @@ async function apiCall(url, options = {}) {
         await notifyMatchesForNewProfile(uid);
       }
       return { ok: true };
+    }
+
+    // POST /api/me/photos/pending — an approved member uploaded a new
+    // photo (already on Cloudinary). It waits in `pendingPhotos` until
+    // the admin approves it; nobody else can see it before that.
+    if (url === "/api/me/photos/pending" && method === "POST") {
+      const uid = await requireUid();
+      const doc = await getUserDoc(uid);
+      if (!needsPhotoApproval(doc, uid)) throw new Error("මෙම ගිණුමට ඡායාරූප කෙලින්ම එකතු කළ හැක");
+      if (!/^https:\/\/res\.cloudinary\.com\//.test(body.url || "")) throw new Error("වලංගු නොවන ඡායාරූප ලිපිනයක්");
+      const pending = addPendingPhoto(doc.pendingPhotos, body.url, body.type);
+      if (pending.length > MAX_PENDING_PHOTOS) throw new Error("අනුමැතිය බලාපොරොත්තුවෙන් ඇති ඡායාරූප වැඩියි. Admin අනුමත කරන තෙක් රැඳී සිටින්න.");
+      await db.collection("users").doc(uid).update({ pendingPhotos: pending });
+      return { ok: true, pendingPhotos: pending };
+    }
+
+    // DELETE /api/me/photos/pending — member cancels one of their own
+    // still-pending photos.
+    if (url === "/api/me/photos/pending" && method === "DELETE") {
+      const uid = await requireUid();
+      const doc = await getUserDoc(uid);
+      const pending = (Array.isArray(doc.pendingPhotos) ? doc.pendingPhotos : []).filter(p => p.url !== body.url);
+      await db.collection("users").doc(uid).update({ pendingPhotos: pending });
+      return { ok: true, pendingPhotos: pending };
     }
 
     // GET /api/reference
@@ -812,31 +942,7 @@ async function apiCall(url, options = {}) {
       const users = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .filter(u => isApproved(u))
-        .map(u => ({
-          id: u.id,
-          name: u.name || "",
-          usernameLower: u.usernameLower || "",
-          gender: u.gender || "",
-          birthDate: u.birthDate || "",
-          birthTime: u.birthTime || "",
-          birthPlace: u.birthPlace || "",
-          nakshatraId: u.nakshatraId || null,
-          rashiId: u.rashiId || null,
-          lagnaRashiId: u.lagnaRashiId || null,
-          height: u.height || "",
-          religion: u.religion || "",
-          ethnicity: u.ethnicity || "",
-          education: u.education || "",
-          profession: u.profession || "",
-          bio: u.bio || "",
-          facebook: u.facebook || "",
-          whatsapp: u.whatsapp || "",
-          photoURL: u.photoURL || "",
-          photos: Array.isArray(u.photos) ? u.photos : [],
-          disabled: !!u.disabled,
-          createdAt: u.createdAt || null,
-          lastSeen: u.lastSeen || null
-        }));
+        .map(u => toAdminUserView(u.id, u));
       users.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
       return { users };
     }
@@ -850,32 +956,7 @@ async function apiCall(url, options = {}) {
       const uid = await requireUid();
       if (uid !== ADMIN_UID) throw new Error("Access denied");
       const snap = await db.collection("users").where("status", "==", "pending").get();
-      const requests = snap.docs.map(d => {
-        const u = d.data();
-        return {
-          id: d.id,
-          name: u.name || "",
-          usernameLower: u.usernameLower || "",
-          gender: u.gender || "",
-          birthDate: u.birthDate || "",
-          birthTime: u.birthTime || "",
-          birthPlace: u.birthPlace || "",
-          nakshatraId: u.nakshatraId || null,
-          rashiId: u.rashiId || null,
-          lagnaRashiId: u.lagnaRashiId || null,
-          height: u.height || "",
-          religion: u.religion || "",
-          ethnicity: u.ethnicity || "",
-          education: u.education || "",
-          profession: u.profession || "",
-          bio: u.bio || "",
-          facebook: u.facebook || "",
-          whatsapp: u.whatsapp || "",
-          photoURL: u.photoURL || "",
-          photos: Array.isArray(u.photos) ? u.photos : [],
-          createdAt: u.createdAt || null
-        };
-      });
+      const requests = snap.docs.map(d => toAdminUserView(d.id, d.data()));
       requests.sort((a, b) => (a.createdAt?.toMillis?.() || 0) - (b.createdAt?.toMillis?.() || 0));
       return { requests };
     }
@@ -919,6 +1000,120 @@ async function apiCall(url, options = {}) {
       if (uid !== ADMIN_UID) throw new Error("Access denied");
       const targetId = url.slice(approvePrefix.length);
       await db.collection("users").doc(targetId).delete();
+      return { ok: true };
+    }
+
+    // GET /api/admin/users/:id — full profile of ONE member/request,
+    // used by admin-user.html (the per-user page). Works for approved
+    // members and for pending registration requests alike.
+    const adminOneMatch = url.match(/^\/api\/admin\/users\/([^/]+)$/);
+    if (adminOneMatch && method === "GET") {
+      const uid = await requireUid();
+      if (uid !== ADMIN_UID) throw new Error("Access denied");
+      const snap = await db.collection("users").doc(adminOneMatch[1]).get();
+      if (!snap.exists) throw new Error("This member no longer exists");
+      return { user: toAdminUserView(snap.id, snap.data()) };
+    }
+
+    // POST /api/admin/users/:id/notify — a notification that ONLY this
+    // one member can see (their own bell/notifications tab).
+    const adminNotifyMatch = url.match(/^\/api\/admin\/users\/([^/]+)\/notify$/);
+    if (adminNotifyMatch && method === "POST") {
+      const uid = await requireUid();
+      if (uid !== ADMIN_UID) throw new Error("Access denied");
+      const text = (body.text || "").trim();
+      if (!text) throw new Error("Message is empty");
+      if (text.length > 500) throw new Error("Message is too long (max 500 characters)");
+      const ok = await sendAdminNotification(adminNotifyMatch[1], "admin", text);
+      if (!ok) throw new Error("Could not send — check the Firestore rules for /notifications");
+      return { ok: true };
+    }
+
+    // POST /api/admin/broadcast — one notification to EVERY registered
+    // member (approved, pending and incomplete accounts; not the admin).
+    if (url === "/api/admin/broadcast" && method === "POST") {
+      const uid = await requireUid();
+      if (uid !== ADMIN_UID) throw new Error("Access denied");
+      const text = (body.text || "").trim();
+      if (!text) throw new Error("Message is empty");
+      if (text.length > 500) throw new Error("Message is too long (max 500 characters)");
+      const snap = await db.collection("users").get();
+      const targets = snap.docs.map(d => d.id).filter(id => id !== ADMIN_UID);
+      // Firestore batches are capped at 500 writes — go in chunks of 400.
+      for (let i = 0; i < targets.length; i += 400) {
+        const batch = db.batch();
+        targets.slice(i, i + 400).forEach(id => {
+          batch.set(db.collection("notifications").doc(), {
+            userId: id,
+            type: "broadcast",
+            actorUid: ADMIN_UID,
+            subjectUid: ADMIN_UID,
+            subjectName: "Porondama",
+            subjectPhoto: NOTIF_LOGO,
+            text,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            read: false
+          });
+        });
+        await batch.commit();
+      }
+      return { ok: true, sent: targets.length };
+    }
+
+    // POST /api/admin/photos/approve  { userId, url }
+    // Moves a pending photo into the member's public gallery
+    // (a pending "cover" replaces the current cover).
+    if (url === "/api/admin/photos/approve" && method === "POST") {
+      const uid = await requireUid();
+      if (uid !== ADMIN_UID) throw new Error("Access denied");
+      const target = await getUserDoc(body.userId);
+      const pending = Array.isArray(target.pendingPhotos) ? target.pendingPhotos : [];
+      const item = pending.find(p => p.url === body.url);
+      if (!item) throw new Error("This photo is no longer pending (the member may have cancelled it).");
+      const photos = [...approvedPhotosOf(target)];
+      if (item.type === "cover") {
+        if (photos.length) photos[0] = item.url; else photos.unshift(item.url);
+      } else if (!photos.includes(item.url)) {
+        photos.push(item.url);
+      }
+      await db.collection("users").doc(body.userId).update({
+        photos,
+        photoURL: photos[0] || "",
+        pendingPhotos: pending.filter(p => p.url !== body.url)
+      });
+      await sendAdminNotification(body.userId, "photo_approved", "ඔබ එකතු කළ ඡායාරූපය අනුමත කරන ලදී. දැන් ඔබගේ පැතිකඩේ පෙනේ.");
+      return { ok: true };
+    }
+
+    // POST /api/admin/photos/reject  { userId, url, reason? }
+    if (url === "/api/admin/photos/reject" && method === "POST") {
+      const uid = await requireUid();
+      if (uid !== ADMIN_UID) throw new Error("Access denied");
+      const target = await getUserDoc(body.userId);
+      const pending = Array.isArray(target.pendingPhotos) ? target.pendingPhotos : [];
+      await db.collection("users").doc(body.userId).update({
+        pendingPhotos: pending.filter(p => p.url !== body.url)
+      });
+      const reason = (body.reason || "").trim();
+      await sendAdminNotification(body.userId, "photo_rejected",
+        "ඔබ එකතු කළ ඡායාරූපයක් අනුමත නොකරන ලදී." + (reason ? " හේතුව: " + reason : ""));
+      return { ok: true };
+    }
+
+    // POST /api/admin/photos/remove  { userId, url, reason? }
+    // Takes an already-public photo out of a member's gallery.
+    if (url === "/api/admin/photos/remove" && method === "POST") {
+      const uid = await requireUid();
+      if (uid !== ADMIN_UID) throw new Error("Access denied");
+      const target = await getUserDoc(body.userId);
+      const photos = approvedPhotosOf(target).filter(u => u !== body.url);
+      await db.collection("users").doc(body.userId).update({
+        photos,
+        photoURL: photos[0] || ""
+      });
+      const reason = (body.reason || "").trim();
+      await sendAdminNotification(body.userId, "photo_removed",
+        "ඔබගේ ගැලරියෙන් ඡායාරූපයක් ඉවත් කරන ලදී." + (reason ? " හේතුව: " + reason : ""));
       return { ok: true };
     }
 
