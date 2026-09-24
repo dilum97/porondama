@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Member · Admin · Porondama</title>
+<link rel="icon" href="img/icon-192.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0d12">
+<link rel="stylesheet" href="css/style.css">
+<script src="js/theme.js"></script>
+<!-- Admin pages are always dark, whatever theme the member site uses.
+     (Does not change the saved member theme.) -->
+<script>document.documentElement.setAttribute("data-theme", "admin");</script>
+</head>
+<body>
+<div class="topbar">
+  <a href="dashboard.html" class="brand">
+    <img src="img/logo2.png" alt="Porondama" class="brand-logo">
+  </a>
+  <div class="nav-links">
+    <a href="admin.html" id="backLink">← Back to admin</a>
+    <a href="#" id="logoutLink">Logout</a>
+  </div>
+</div>
+
+<div class="wrap">
+  <div id="pageBody"><div class="empty-state">Loading...</div></div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="data/reference.js"></script>
+<script src="js/matching.js"></script>
+<script src="js/image-compress.js"></script>
+<script src="js/cloudinary.js"></script>
+<script src="js/api.js"></script>
+<script src="js/admin-common.js"></script>
+<script>
+  /**
+   * admin-user.html — the full page for ONE member (or one pending
+   * registration request). Opened from every name in admin.html:
+   *   admin-user.html?id=<uid>&from=<active|requests|online|photos>
+   *
+   * Everything the admin can do to a person lives here:
+   *   - see their profile + every gallery photo (and remove a bad one)
+   *   - approve / reject their new photos waiting for review
+   *   - approve / reject their registration request
+   *   - send a notification only they can see
+   *   - chat, disable / enable, delete
+   */
+  const params = new URLSearchParams(location.search);
+  const userId = params.get("id");
+  const fromView = params.get("from") || "active";
+  const backUrl = "admin.html?view=" + encodeURIComponent(fromView);
+  document.getElementById("backLink").href = backUrl;
+
+  let u = null;
+
+  // The photos everyone can currently see (public gallery).
+  function galleryOf(m) {
+    if (m.photos && m.photos.length) return m.photos;
+    return m.photoURL ? [m.photoURL] : [];
+  }
+
+  function statusPills(m) {
+    const pills = [];
+    if (m.status === "pending") pills.push(`<span class="status-pill warn">Pending registration request</span>`);
+    else pills.push(`<span class="status-pill ok">Approved</span>`);
+    if (m.disabled) pills.push(`<span class="status-pill bad">Disabled by admin</span>`);
+    if (m.selfDeactivated) pills.push(`<span class="status-pill warn">Deactivated by member</span>`);
+    if (isOnline(m)) pills.push(`<span class="status-pill ok">Online now</span>`);
+    else if (m.lastSeen) pills.push(`<span class="status-pill">Last seen ${escapeHtml(timeAgo(m.lastSeen))}</span>`);
+    return pills.join("");
+  }
+
+  function detailRow(label, value) {
+    return value ? `<div class="k">${label}</div><div class="v">${escapeHtml(value)}</div>` : "";
+  }
+
+  function render() {
+    const isPending = u.status === "pending";
+    const gallery = galleryOf(u);
+    const pending = (u.pendingPhotos || []).slice().sort((a, b) => (a.at || 0) - (b.at || 0));
+    const age = calculateAge(u.birthDate);
+    const genderLabel = u.gender === "male" ? "Male" : u.gender === "female" ? "Female" : "";
+
+    const actions = isPending ? `
+      <button class="btn btn-primary" onclick="approveRegistration()">Approve registration</button>
+      <button class="btn btn-danger" onclick="rejectRegistration()">Reject</button>
+    ` : `
+      <button class="btn btn-primary" onclick="chatWithMember()">Chat</button>
+      <button class="btn btn-secondary" onclick="toggleDisabled()">${u.disabled ? "Enable account" : "Disable account"}</button>
+      <button class="btn btn-danger" onclick="deleteMember()">Delete profile</button>
+    `;
+
+    const notifyCard = isPending ? "" : `
+      <div class="admin-panel-card">
+        <h3>Send a notification</h3>
+        <p class="hint">Only ${escapeHtml(u.name || "this member")} will see this, in their notifications tab.</p>
+        <textarea id="notifyText" class="admin-textarea" maxlength="500" placeholder="Write a message to this member..."></textarea>
+        <div class="char-count"><span id="notifyCount">0</span> / 500</div>
+        <div class="admin-actions" style="margin-top:10px;">
+          <button type="button" class="btn btn-secondary" onclick="useTemplate(0)">Template: photo warning</button>
+          <button type="button" class="btn btn-secondary" onclick="useTemplate(1)">Template: complete profile</button>
+          <button type="button" class="btn btn-secondary" onclick="useTemplate(2)">Template: account disabled</button>
+        </div>
+        <div class="admin-actions" style="margin-top:12px;">
+          <button type="button" class="btn btn-primary" id="notifySendBtn" onclick="sendNotification()">Send notification</button>
+        </div>
+      </div>`;
+
+    const pendingCard = (!isPending && pending.length) ? `
+      <div class="admin-panel-card">
+        <h3>New photos waiting for approval (${pending.length})</h3>
+        <p class="hint">Not visible to anyone else until you approve them.</p>
+        <div class="admin-photo-grid">
+          ${pending.map((p, i) => `
+            <div class="admin-photo">
+              <span class="admin-photo-tag">${p.type === "cover" ? "New cover photo" : "Gallery"}</span>
+              <img src="${escapeHtml(p.url)}" alt="" onclick="openPendingLightbox(${i})">
+              <div class="admin-photo-info">${timeAgo(p.at)}</div>
+              <div class="admin-photo-foot">
+                <button class="btn btn-primary" onclick="approvePhoto(${i})">Approve</button>
+                <button class="btn btn-danger" onclick="rejectPhoto(${i})">Reject</button>
+              </div>
+            </div>`).join("")}
+        </div>
+      </div>` : "";
+
+    const galleryCard = `
+      <div class="admin-panel-card">
+        <h3>${isPending ? "Photos submitted" : "Gallery photos"} (${gallery.length})</h3>
+        <p class="hint">${isPending ? "Review these before approving the registration." : "What other members can currently see. Tap a photo to enlarge."}</p>
+        ${gallery.length ? `
+        <div class="admin-photo-grid">
+          ${gallery.map((url, i) => `
+            <div class="admin-photo">
+              ${i === 0 ? `<span class="admin-photo-tag">Cover</span>` : ""}
+              <img src="${escapeHtml(url)}" alt="" onclick="openGalleryLightbox(${i})">
+              ${isPending ? "" : `
+              <div class="admin-photo-foot">
+                <button class="btn btn-danger" onclick="removePhoto(${i})">Remove</button>
+              </div>`}
+            </div>`).join("")}
+        </div>` : `<div class="empty-state" style="padding:18px 0;">No photos</div>`}
+      </div>`;
+
+    document.getElementById("pageBody").innerHTML = `
+      <div class="admin-user-head">
+        ${gallery[0] ? `<img class="admin-user-avatar" src="${escapeHtml(gallery[0])}" alt="" onclick="openGalleryLightbox(0)">` : `<div class="admin-user-avatar"></div>`}
+        <div>
+          <h2>${isOnline(u) ? '<span class="online-dot"></span>' : ""}${escapeHtml(u.name || "(No name)")}</h2>
+          <div class="hint">${u.usernameLower ? "@" + escapeHtml(u.usernameLower) : ""}${genderLabel ? (u.usernameLower ? " · " : "") + genderLabel : ""}${age != null ? " · Age " + age : ""}</div>
+          <div>${statusPills(u)}</div>
+        </div>
+      </div>
+
+      <div class="admin-panel-card">
+        <h3>Actions</h3>
+        <div class="admin-actions" style="margin-top:10px;">${actions}</div>
+      </div>
+
+      ${pendingCard}
+      ${galleryCard}
+      ${notifyCard}
+
+      <div class="admin-panel-card">
+        <h3>Profile details</h3>
+        <div class="profile-grid">
+          ${detailRow("Birth Date", u.birthDate)}
+          ${detailRow("Birth Time", u.birthTime)}
+          ${detailRow("Birth Place", u.birthPlace)}
+          ${u.lagnaRashiId ? detailRow("Lagna", rashiName(u.lagnaRashiId) || String(u.lagnaRashiId)) : ""}
+          ${u.nakshatraId ? detailRow("Nakshatra", nakshatraName(u.nakshatraId) || String(u.nakshatraId)) : ""}
+          ${u.rashiId ? detailRow("Rashi", rashiName(u.rashiId) || String(u.rashiId)) : ""}
+          ${u.height ? detailRow("Height", u.height + " cm") : ""}
+          ${detailRow("Religion", u.religion)}
+          ${detailRow("Ethnicity", u.ethnicity)}
+          ${detailRow("Education", u.education)}
+          ${detailRow("Profession", u.profession)}
+        </div>
+        ${u.bio ? `<p style="color:var(--ivory); font-size:0.92rem; margin:16px 0 0;">${escapeHtml(u.bio)}</p>` : ""}
+        ${(u.facebook || u.whatsapp) ? `
+          <div class="admin-actions" style="margin-top:16px;">
+            ${u.facebook ? `<a class="btn btn-secondary" href="${escapeHtml(u.facebook)}" target="_blank" rel="noopener noreferrer">Facebook Profile</a>` : ""}
+            ${u.whatsapp ? `<a class="btn btn-secondary" href="https://wa.me/${escapeHtml(u.whatsapp.replace(/[^0-9]/g, ''))}" target="_blank" rel="noopener noreferrer">WhatsApp</a>` : ""}
+          </div>` : ""}
+      </div>
+    `;
+
+    const nt = document.getElementById("notifyText");
+    if (nt) nt.addEventListener("input", () => {
+      document.getElementById("notifyCount").textContent = nt.value.length;
+    });
+  }
+
+  // ---------------- photo viewers ----------------
+  window.openGalleryLightbox = function (i) { openAdminLightbox(galleryOf(u), i); };
+  window.openPendingLightbox = function (i) {
+    const list = (u.pendingPhotos || []).slice().sort((a, b) => (a.at || 0) - (b.at || 0));
+    openAdminLightbox(list.map(p => p.url), i);
+  };
+
+  function sortedPending() {
+    return (u.pendingPhotos || []).slice().sort((a, b) => (a.at || 0) - (b.at || 0));
+  }
+
+  // ---------------- photo actions ----------------
+  window.approvePhoto = async function (i) {
+    const p = sortedPending()[i];
+    if (!p) return;
+    try {
+      await apiCall("/api/admin/photos/approve", { method: "POST", body: JSON.stringify({ userId: u.id, url: p.url }) });
+      adminToast("Photo approved — member notified");
+      await load();
+    } catch (err) {
+      alert(err.message);
+      await load();
+    }
+  };
+
+  window.rejectPhoto = async function (i) {
+    const p = sortedPending()[i];
+    if (!p) return;
+    const reason = await askAdminText({
+      title: "Reject this photo?",
+      message: "The member gets a notification. Add a reason so they know what to fix (optional).",
+      placeholder: "Reason (optional)",
+      confirmLabel: "Reject",
+      danger: true
+    });
+    if (reason === null) return;
+    try {
+      await apiCall("/api/admin/photos/reject", { method: "POST", body: JSON.stringify({ userId: u.id, url: p.url, reason }) });
+      adminToast("Photo rejected — member notified");
+      await load();
+    } catch (err) {
+      alert(err.message);
+      await load();
+    }
+  };
+
+  window.removePhoto = async function (i) {
+    const url = galleryOf(u)[i];
+    if (!url) return;
+    const reason = await askAdminText({
+      title: "Remove this photo?",
+      message: "It disappears from the member's profile right away and they get a notification. Add a reason (optional).",
+      placeholder: "Reason (optional)",
+      confirmLabel: "Remove photo",
+      danger: true
+    });
+    if (reason === null) return;
+    try {
+      await apiCall("/api/admin/photos/remove", { method: "POST", body: JSON.stringify({ userId: u.id, url, reason }) });
+      adminToast("Photo removed — member notified");
+      await load();
+    } catch (err) {
+      alert(err.message);
+      await load();
+    }
+  };
+
+  // ---------------- notification ----------------
+  const TEMPLATES = [
+    "අනවශ්‍ය ඡායාරූප උඩුගත කිරීම නවත්වන්න. නැවත සිදු වුවහොත් ඔබගේ ගිණුම අක්‍රිය කරනු ලැබේ.",
+    "කරුණාකර ඔබගේ පැතිකඩ තොරතුරු සම්පූර්ණ කරන්න.",
+    "ඔබගේ ගිණුම තාවකාලිකව අක්‍රිය කර ඇත. වැඩි විස්තර සඳහා Customer Support හරහා අප හා සම්බන්ධ වන්න."
+  ];
+  window.useTemplate = function (i) {
+    const ta = document.getElementById("notifyText");
+    ta.value = TEMPLATES[i];
+    document.getElementById("notifyCount").textContent = ta.value.length;
+    ta.focus();
+  };
+
+  window.sendNotification = async function () {
+    const ta = document.getElementById("notifyText");
+    const text = ta.value.trim();
+    if (!text) { ta.focus(); return; }
+    const btn = document.getElementById("notifySendBtn");
+    btn.disabled = true;
+    try {
+      await apiCall("/api/admin/users/" + u.id + "/notify", { method: "POST", body: JSON.stringify({ text }) });
+      ta.value = "";
+      document.getElementById("notifyCount").textContent = "0";
+      adminToast("Notification sent to " + (u.name || "member"));
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  // ---------------- account actions ----------------
+  window.chatWithMember = function () {
+    location.href = "admin.html?chat=" + encodeURIComponent(u.id);
+  };
+
+  window.toggleDisabled = async function () {
+    const next = !u.disabled;
+    if (!confirm(next
+      ? `Disable ${u.name}? They will be hidden from matches and the feed.`
+      : `Enable ${u.name} again?`)) return;
+    try {
+      await apiCall("/api/admin/users/" + u.id, { method: "PUT", body: JSON.stringify({ disabled: next }) });
+      await load();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  window.deleteMember = async function () {
+    if (!confirm(`Permanently delete ${u.name}'s profile? (The Auth account itself must be removed separately via the Firebase Console.)`)) return;
+    try {
+      await apiCall("/api/admin/users/" + u.id, { method: "DELETE" });
+      location.href = backUrl;
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  window.approveRegistration = async function () {
+    if (!confirm(`Approve ${u.name} and add them to the site?`)) return;
+    try {
+      await apiCall("/api/admin/requests/" + u.id + "/approve", { method: "PUT" });
+      location.href = backUrl;
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  window.rejectRegistration = async function () {
+    if (!confirm(`Reject and delete ${u.name}'s request?`)) return;
+    try {
+      await apiCall("/api/admin/requests/" + u.id, { method: "DELETE" });
+      location.href = backUrl;
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  // ---------------- load ----------------
+  async function load() {
+    try {
+      const res = await apiCall("/api/admin/users/" + userId);
+      u = res.user;
+      render();
+    } catch (err) {
+      document.getElementById("pageBody").innerHTML = `<div class="error-box">${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  document.getElementById("logoutLink").addEventListener("click", async (e) => {
+    e.preventDefault();
+    await auth.signOut();
+    location.href = "admin-login.html";
+  });
+
+  (async () => {
+    const user = await requireAdminOrRedirect();
+    if (!user) return;
+    if (!userId) { location.href = "admin.html"; return; }
+    load();
+  })();
+</script>
+</body>
+</html>
