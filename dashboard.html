@@ -261,6 +261,11 @@
           <div class="photo-gallery" id="photoGallery"></div>
           <button type="button" class="btn btn-secondary" id="updateGalleryBtn" style="width:auto; margin-top:10px;">ගැලරිය යාවත්කාලීන කරන්න</button>
           <input id="photoInput" type="file" accept="image/*" multiple style="display:none;">
+          <p class="hint" id="photoApprovalHint" style="display:none; margin:8px 0 0;">අලුතින් එකතු කරන ඡායාරූප Admin අනුමත කළ පසුව පමණක් ඔබගේ පැතිකඩේ අන් අයට පෙනේ.</p>
+          <div id="pendingPhotosBox" style="display:none; margin-top:14px;">
+            <label style="margin-top:0;">⏳ අනුමැතිය බලාපොරොත්තුවෙන් ඇති ඡායාරූප</label>
+            <div class="photo-gallery" id="pendingPhotoGallery"></div>
+          </div>
 
           <label for="name">සම්පූර්ණ නම</label>
           <input id="name" required>
@@ -455,6 +460,16 @@
   let notifUnsub = null;
   let latestNotifications = [];
 
+  // Notifications sent by the admin (single member or broadcast) and
+  // photo-review results. They have no profile to open — they just
+  // show their (possibly long) text in full.
+  const ADMIN_NOTIF_TYPES = ["admin", "broadcast", "photo_approved", "photo_rejected", "photo_removed"];
+  const NOTIF_ICONS = {
+    match: "🎉 ", broadcast: "📢 ", admin: "✉️ ",
+    photo_approved: "✅ ", photo_rejected: "⚠️ ", photo_removed: "⚠️ "
+  };
+  let lastPhotoNotifIds = null;
+
   function renderNotifPage() {
     const list = document.getElementById("notifPageList");
     if (latestNotifications.length === 0) {
@@ -465,8 +480,8 @@
       <button class="notif-item ${n.read ? '' : 'unread'}" onclick="openNotification('${n.id}','${n.type}','${n.subjectUid}','${escapeHtml(n.subjectName)}','${escapeHtml(n.subjectPhoto)}')">
         <img class="conv-avatar" src="${escapeHtml(n.subjectPhoto)}" alt="">
         <div class="conv-info">
-          <div class="conv-name">${n.type === 'match' ? '🎉 ' : ''}${escapeHtml(n.subjectName)}</div>
-          <div class="conv-last">${escapeHtml(n.text)}</div>
+          <div class="conv-name">${NOTIF_ICONS[n.type] || ''}${escapeHtml(n.subjectName)}</div>
+          <div class="conv-last ${ADMIN_NOTIF_TYPES.includes(n.type) ? 'notif-full' : ''}">${escapeHtml(n.text)}</div>
         </div>
         <div class="conv-time">${timeAgo(n.createdAt)}</div>
       </button>
@@ -481,6 +496,12 @@
       if (unread > 0) { badge.textContent = unread; badge.style.display = "inline-block"; }
       else { badge.style.display = "none"; }
       if (panels.notifications.classList.contains("active")) renderNotifPage();
+
+      // The admin just approved / rejected / removed one of my photos:
+      // refresh Settings so the gallery and the "waiting" strip are current.
+      const photoNotifIds = notifications.filter(n => (n.type || "").startsWith("photo_")).map(n => n.id).join(",");
+      if (lastPhotoNotifIds !== null && photoNotifIds !== lastPhotoNotifIds) refreshMyPhotos();
+      lastPhotoNotifIds = photoNotifIds;
     }, err => console.error("subscribeToNotifications failed:", err));
   }
 
@@ -491,6 +512,10 @@
     } else if (type === "approved") {
       // Nothing to open — the pending screen already switches itself
       // over automatically as soon as status changes.
+    } else if (ADMIN_NOTIF_TYPES.includes(type)) {
+      // Admin message / broadcast: nothing to open. Photo results
+      // take you to your gallery in Settings.
+      if (type.startsWith("photo_")) showTab("settings");
     } else {
       location.href = "match.html?id=" + subjectUid;
     }
@@ -988,8 +1013,70 @@
 
   // ---------------- settings (profile) ----------------
   const MAX_PHOTOS = 7;
-  let currentPhotos = [];
+  let currentPhotos = [];      // photos everyone can see (approved)
+  let pendingPhotos = [];      // new uploads waiting for the admin: [{ url, type, at }]
   let photoLongPressTimer = null;
+
+  // Once I'm an approved member, new photos don't go live by themselves:
+  // they wait for the admin (see /api/me/photos/pending in api.js).
+  // While my registration is still incomplete/pending, photos are added
+  // directly like before — the admin reviews them with the request.
+  function photoApprovalRequired() {
+    return !!(me && me.id !== ADMIN_UID && isApproved(me));
+  }
+
+  function photosFromMe() {
+    return Array.isArray(me.photos) && me.photos.length
+      ? [...me.photos]
+      : (me.photoURL ? [me.photoURL] : []);
+  }
+
+  function updatePhotoApprovalHint() {
+    document.getElementById("photoApprovalHint").style.display = photoApprovalRequired() ? "block" : "none";
+  }
+
+  function renderPendingPhotos() {
+    const box = document.getElementById("pendingPhotosBox");
+    const el = document.getElementById("pendingPhotoGallery");
+    if (!photoApprovalRequired() || pendingPhotos.length === 0) {
+      box.style.display = "none";
+      el.innerHTML = "";
+      return;
+    }
+    box.style.display = "block";
+    el.innerHTML = pendingPhotos.map((p, i) => `
+      <div>
+        <div class="photo-slot">
+          <img src="${escapeHtml(p.url)}" alt="" onclick="openLightbox(pendingPhotos.map(x => x.url), ${i})">
+          <span class="photo-primary-tag">${p.type === "cover" ? "ප්‍රධාන" : "ගැලරි"}</span>
+        </div>
+        <button type="button" style="background:none; border:none; color:var(--rose); font-size:0.72rem; padding:4px 0; cursor:pointer;" onclick="cancelPendingPhoto(${i})">ඉවත් කරන්න</button>
+      </div>`).join("");
+  }
+
+  window.cancelPendingPhoto = async function (i) {
+    const p = pendingPhotos[i];
+    if (!p) return;
+    try {
+      const res = await apiCall("/api/me/photos/pending", { method: "DELETE", body: JSON.stringify({ url: p.url }) });
+      pendingPhotos = res.pendingPhotos;
+      renderPendingPhotos();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  async function refreshMyPhotos() {
+    try {
+      const res = await apiCall("/api/me");
+      me = res.user;
+      currentPhotos = photosFromMe();
+      pendingPhotos = Array.isArray(me.pendingPhotos) ? [...me.pendingPhotos] : [];
+      renderCoverPhoto();
+      renderPhotoGallery();
+      renderPendingPhotos();
+    } catch (e) { console.warn("refreshMyPhotos failed:", e); }
+  }
 
   function renderCoverPhoto() {
     const el = document.getElementById("coverPhotoPreview");
@@ -1077,13 +1164,21 @@
     preview.innerHTML = `<div class="photo-slot-loading" style="width:100%;height:100%;">උඩුගත වෙමින්...</div>`;
     try {
       const url = await uploadPhotoToCloudinary(file);
-      if (currentPhotos.length) currentPhotos[0] = url;
-      else currentPhotos.unshift(url);
+      if (photoApprovalRequired()) {
+        const res = await apiCall("/api/me/photos/pending", { method: "POST", body: JSON.stringify({ url, type: "cover" }) });
+        pendingPhotos = res.pendingPhotos;
+        showToast("ඡායාරූපය Admin ගේ අනුමැතිය සඳහා යවන ලදී");
+      } else if (currentPhotos.length) {
+        currentPhotos[0] = url;
+      } else {
+        currentPhotos.unshift(url);
+      }
     } catch (err) {
       alert(err.message || "ඡායාරූපය උඩුගත කිරීම අසාර්ථකයි");
     }
     renderCoverPhoto();
     renderPhotoGallery();
+    renderPendingPhotos();
   });
 
   document.getElementById("updateGalleryBtn").addEventListener("click", () => {
@@ -1094,7 +1189,7 @@
     const files = Array.from(e.target.files || []);
     e.target.value = "";
     if (!files.length) return;
-    const room = MAX_PHOTOS - currentPhotos.length;
+    const room = MAX_PHOTOS - currentPhotos.length - (photoApprovalRequired() ? pendingPhotos.length : 0);
     if (room <= 0) { alert(`උපරිම ඡායාරූප ${MAX_PHOTOS} ක් විතරයි එකතු කළ හැක්කේ.`); return; }
     const toUpload = files.slice(0, room);
     const el = document.getElementById("photoGallery");
@@ -1102,13 +1197,20 @@
     try {
       for (const file of toUpload) {
         const url = await uploadPhotoToCloudinary(file);
-        currentPhotos.push(url);
+        if (photoApprovalRequired()) {
+          const res = await apiCall("/api/me/photos/pending", { method: "POST", body: JSON.stringify({ url, type: "gallery" }) });
+          pendingPhotos = res.pendingPhotos;
+        } else {
+          currentPhotos.push(url);
+        }
       }
+      if (photoApprovalRequired()) showToast("ඡායාරූප Admin ගේ අනුමැතිය සඳහා යවන ලදී");
     } catch (err) {
       alert(err.message || "ඡායාරූපය උඩුගත කිරීම අසාර්ථකයි");
     }
     renderCoverPhoto();
     renderPhotoGallery();
+    renderPendingPhotos();
   });
 
   async function loadSettingsForm() {
@@ -1131,11 +1233,12 @@
     document.getElementById("rashi").value = me.rashiId || "";
     refreshComputedPanchanga();
 
-    currentPhotos = Array.isArray(me.photos) && me.photos.length
-      ? [...me.photos]
-      : (me.photoURL ? [me.photoURL] : []);
+    currentPhotos = photosFromMe();
+    pendingPhotos = Array.isArray(me.pendingPhotos) ? [...me.pendingPhotos] : [];
     renderCoverPhoto();
     renderPhotoGallery();
+    renderPendingPhotos();
+    updatePhotoApprovalHint();
   }
 
   // Nakshatra + Rashi are no longer picked manually — they're derived
@@ -1265,6 +1368,13 @@
       });
       const meRes = await apiCall("/api/me");
       me = meRes.user;
+      // Re-sync the gallery with what was actually saved (an approved
+      // member's un-approved photos are never part of `photos`).
+      currentPhotos = photosFromMe();
+      pendingPhotos = Array.isArray(me.pendingPhotos) ? [...me.pendingPhotos] : [];
+      renderCoverPhoto();
+      renderPhotoGallery();
+      renderPendingPhotos();
       resetSaveButton(true);
       savedMsg.style.display = "block";
     } catch (err) {
@@ -1763,6 +1873,11 @@
     document.getElementById("incompleteNotice").style.display = "none";
     document.getElementById("submitForReviewBtn").style.display = "none";
     document.getElementById("settingsAccountSection").style.display = "";
+
+    // Just approved (pending -> approved)? From now on new photos need
+    // the admin's OK — show the hint and reset the gallery view.
+    updatePhotoApprovalHint();
+    renderPendingPhotos();
 
     startConversationsSubscription();
     startNotificationsSubscription();
